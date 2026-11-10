@@ -33,7 +33,7 @@ function InlineVideoPlayer({
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
-  const [isMuted, setIsMuted] = useState(false)
+  const [isMuted, setIsMuted] = useState(true)
   const [isEnded, setIsEnded] = useState(false)
   const [needsTapForSound, setNeedsTapForSound] = useState(false)
   const hasTriggeredRef = useRef(false)
@@ -65,32 +65,30 @@ function InlineVideoPlayer({
     if (!video) return
 
     const handleEnded = () => {
+      if (hasEndedRef.current) return
       hasEndedRef.current = true
       setIsEnded(true)
       setIsPlaying(false)
       try {
         video.pause()
-        if (video.duration && !isNaN(video.duration)) {
-          video.currentTime = video.duration
-        }
       } catch {}
       triggerNext()
     }
 
     const handleTimeUpdate = () => {
-      if (video.duration && video.currentTime >= video.duration - 0.25) {
+      if (video.duration && video.currentTime >= video.duration - 0.05) {
         if (!hasEndedRef.current) {
           handleEnded()
         }
       }
     }
 
-    // Auto-advance fallback timer at 19.5 seconds (video is 18.2s)
+    // Safety fallback timer at 45 seconds (video is 18.2s) - prevents premature cutoff on mobile network buffering
     const timer = setTimeout(() => {
       if (!hasEndedRef.current) {
         handleEnded()
       }
-    }, 19500)
+    }, 45000)
 
     const handlePlay = (e?: Event) => {
       if (hasEndedRef.current) {
@@ -110,9 +108,11 @@ function InlineVideoPlayer({
     video.addEventListener("play", handlePlay)
     video.addEventListener("pause", handlePause)
 
-    // Attempt autoplay ONLY ONCE on initial mount
+    // Mobile-optimized autoplay
     if (!hasStartedAutoplayRef.current && !hasEndedRef.current) {
       hasStartedAutoplayRef.current = true
+
+      // Try playing with sound first (works if user already touched page during intro)
       video.muted = false
       const playPromise = video.play()
 
@@ -124,7 +124,7 @@ function InlineVideoPlayer({
             setNeedsTapForSound(false)
           })
           .catch(() => {
-            // If browser policy blocks unmuted autoplay, play muted and surface un-mute prompt
+            // Mobile browser policy required muted playback
             video.muted = true
             setIsMuted(true)
             setNeedsTapForSound(true)
@@ -140,16 +140,20 @@ function InlineVideoPlayer({
       }
     }
 
-    // Global first-tap listener to unmute cleanly (only while playing and not ended)
+    // Unmute immediately on any tap or touch anywhere on the page
     const handleGlobalTap = () => {
-      if (video && video.muted && !hasEndedRef.current) {
+      if (video && !hasEndedRef.current) {
         video.muted = false
         setIsMuted(false)
         setNeedsTapForSound(false)
+        if (video.paused) {
+          video.play().catch(() => {})
+        }
       }
     }
-    window.addEventListener("touchstart", handleGlobalTap, { once: true, passive: true })
-    window.addEventListener("click", handleGlobalTap, { once: true })
+    window.addEventListener("touchstart", handleGlobalTap, { passive: true })
+    window.addEventListener("touchend", handleGlobalTap, { passive: true })
+    window.addEventListener("click", handleGlobalTap)
 
     return () => {
       clearTimeout(timer)
@@ -158,6 +162,7 @@ function InlineVideoPlayer({
       video.removeEventListener("play", handlePlay)
       video.removeEventListener("pause", handlePause)
       window.removeEventListener("touchstart", handleGlobalTap)
+      window.removeEventListener("touchend", handleGlobalTap)
       window.removeEventListener("click", handleGlobalTap)
     }
   }, [triggerNext])
@@ -187,11 +192,16 @@ function InlineVideoPlayer({
       <video
         ref={videoRef}
         src={videoUrl}
+        autoPlay
+        muted
         playsInline
+        // @ts-ignore
+        webkit-playsinline="true"
+        x5-playsinline="true"
         preload="auto"
         controls={!isEnded}
         loop={false}
-        className="w-full h-auto block rounded-2xl max-h-[420px] object-cover"
+        className="w-full h-auto block rounded-2xl max-h-[420px] object-cover cursor-pointer"
         onClick={isEnded ? undefined : togglePlay}
         onEnded={() => {
           if (!hasEndedRef.current) {
@@ -262,13 +272,13 @@ function ModernAudioPlayer({
     if (!audio) return
 
     const estimatedDuration = audioUrl.includes("audio-4")
-      ? 46000
+      ? 52000
       : audioUrl.includes("audio-3")
-      ? 29000
-      : audioUrl.includes("audio-6")
       ? 32000
+      : audioUrl.includes("audio-6")
+      ? 38000
       : audioUrl.includes("audio-5")
-      ? 19000
+      ? 22000
       : 30000
 
     const fallbackTimer = setTimeout(() => {
@@ -1309,7 +1319,7 @@ function ChatContent() {
     activeTimeoutsRef.current.push(t1)
   }
 
-  /* STEP 6: VER ACORDO (Áudio 2: audio-4.mp3 com duração de 43.18s)
+  /* STEP 6: VER ACORDO (Áudio 2: audio-4.mp3 com duração de 45.64s)
      Garantir que as mensagens seguintes tenham delays humanizados e acompanhem a fala da Fernanda,
      e a pergunta/botão final só apareça DEPOIS que o áudio 2 já terminou de rodar por completo!
   */
@@ -1319,7 +1329,7 @@ function ChatContent() {
     const formattedCpf = formatCPF(userData?.cpf || "")
     const today = new Date().toLocaleDateString("pt-BR")
 
-    // Envia o segundo áudio (audio-4.mp3 - 43.18s)
+    // Envia o segundo áudio (audio-4.mp3 - 45.64s)
     const audio4Msg: Message = {
       id: "audio-4-fernanda",
       type: "audio",
@@ -1330,7 +1340,7 @@ function ChatContent() {
     }
     addMessageWithTyping(audio4Msg, 1600)
 
-    // Mensagem 1: Parabéns (entra aos ~11s de áudio, digitando a partir de 8.5s)
+    // Mensagem 1: Parabéns (entra aos ~12s de áudio, digitando a partir de 9s)
     const t1 = setTimeout(() => {
       const parabensMsg: Message = {
         id: "s6-parabens-super-acordo",
@@ -1341,7 +1351,7 @@ function ChatContent() {
       }
       addMessageWithTyping(parabensMsg, 3000)
 
-      // Mensagem 2: Acessando acordo (entra aos ~21s de áudio, digitando a partir de 18s)
+      // Mensagem 2: Acessando acordo (entra aos ~20s de áudio)
       const t2 = setTimeout(() => {
         const acessandoMsg: Message = {
           id: "s6-acessando-acordo",
@@ -1352,7 +1362,7 @@ function ChatContent() {
         }
         addMessageWithTyping(acessandoMsg, 2800)
 
-        // Mensagem 3: Termo e Documento do Acordo (entra aos ~28s de áudio)
+        // Mensagem 3: Termo e Documento do Acordo (entra aos ~26s de áudio)
         const t3 = setTimeout(() => {
           const termoDocumento: Message = {
             id: "s6-termo-documento",
@@ -1373,7 +1383,7 @@ function ChatContent() {
           }
           addMessageWithTyping(termoDocumento, 2200)
 
-          // Mensagem 4: Informações do acordo (entra aos ~37s de áudio)
+          // Mensagem 4: Informações do acordo (entra aos ~34s de áudio)
           const t4 = setTimeout(() => {
             const infoAcordoMsg: Message = {
               id: "s6-info-acordo",
@@ -1384,7 +1394,7 @@ function ChatContent() {
             }
             addMessageWithTyping(infoAcordoMsg, 3000)
 
-            // Mensagem 5: Aviso de Titular (entra aos ~44s, quando o áudio 2 de 43.18s termina)
+            // Mensagem 5: Aviso de Titular (entra aos ~43s)
             const t5 = setTimeout(() => {
               const titularMsg: Message = {
                 id: "s6-titular-aviso",
@@ -1395,7 +1405,7 @@ function ChatContent() {
               }
               addMessageWithTyping(titularMsg, 2800)
 
-              // Mensagem 6 + Botão: Pergunta final (entra aos ~51s, áudio 2 totalmente finalizado)
+              // Mensagem 6 + Botão: Pergunta final (entra aos ~52s, áudio 2 de 45.6s totalmente finalizado)
               const t6 = setTimeout(() => {
                 const perguntaFinalMsg: Message = {
                   id: "s6-pergunta-final",
@@ -1411,21 +1421,21 @@ function ChatContent() {
                   ],
                 }
                 addMessageWithTyping(perguntaFinalMsg, 3200)
-              }, 6000)
+              }, 9000)
               activeTimeoutsRef.current.push(t6)
-            }, 6500)
+            }, 8500)
             activeTimeoutsRef.current.push(t5)
-          }, 6500)
+          }, 7500)
           activeTimeoutsRef.current.push(t4)
-        }, 6500)
+        }, 7000)
         activeTimeoutsRef.current.push(t3)
-      }, 7000)
+      }, 8000)
       activeTimeoutsRef.current.push(t2)
-    }, 8500)
+    }, 9000)
     activeTimeoutsRef.current.push(t1)
   }
 
-  /* STEP 7: Confirmar acordo e limpar o nome (Áudio 3: audio-5.mp3 - 16.77s) */
+  /* STEP 7: Confirmar acordo e limpar o nome (Áudio 3: audio-5.mp3 - 16.93s) */
   const stepConfirmarAcordo = () => {
     // Pausa qualquer áudio anterior imediatamente para evitar qualquer sobreposição
     if (typeof document !== "undefined") {
@@ -1462,11 +1472,11 @@ function ChatContent() {
         ],
       }
       addMessageWithTyping(desejaMsg, 2800)
-    }, 17500)
+    }, 18000)
     activeTimeoutsRef.current.push(t)
   }
 
-  /* STEP 8: Continuar com pagamento (Áudio 4: audio-6.mp3 - 29.10s) */
+  /* STEP 8: Continuar com pagamento (Áudio 4: audio-6.mp3 - 32.76s) */
   const stepContinuarPagamento = () => {
     // Pausa qualquer áudio anterior
     if (typeof document !== "undefined") {
@@ -1490,7 +1500,7 @@ function ChatContent() {
     }
     addMessageWithTyping(audio6Msg, 1600)
 
-    // Mensagem aos 8s de áudio
+    // Mensagem aos 8.5s de áudio
     const t1 = setTimeout(() => {
       const confirmandoMsg: Message = {
         id: "s8-confirmando",
@@ -1501,7 +1511,7 @@ function ChatContent() {
       }
       addMessageWithTyping(confirmandoMsg, 2600)
 
-      // Mensagem aos 17s de áudio
+      // Mensagem aos 18s de áudio
       const t2 = setTimeout(() => {
         const serasaInformaMsg: Message = {
           id: "s8-serasa-informa",
@@ -1512,7 +1522,7 @@ function ChatContent() {
         }
         addMessageWithTyping(serasaInformaMsg, 3200)
 
-        // Mensagem aos 25s de áudio
+        // Mensagem aos 27s de áudio
         const t3 = setTimeout(() => {
           const parabensConfirmadoMsg: Message = {
             id: "s8-parabens-confirmado",
@@ -1523,7 +1533,7 @@ function ChatContent() {
           }
           addMessageWithTyping(parabensConfirmadoMsg, 2600)
 
-          // Comprovante embed aos 31s (após o término do áudio 6 de 29s)
+          // Comprovante embed aos 34.5s (após o término do áudio 6 de 32.76s)
           const t4 = setTimeout(() => {
             const paymentProofEmbed: Message = {
               id: "s8-payment-proof-embed",
@@ -1568,17 +1578,17 @@ function ChatContent() {
                   ],
                 }
                 addMessageWithTyping(paymentButton, 2800)
-              }, 4500)
+              }, 6000)
               activeTimeoutsRef.current.push(t6)
-            }, 5000)
+            }, 6500)
             activeTimeoutsRef.current.push(t5)
-          }, 5500)
+          }, 7500)
           activeTimeoutsRef.current.push(t4)
-        }, 5500)
+        }, 9000)
         activeTimeoutsRef.current.push(t3)
-      }, 7000)
+      }, 9500)
       activeTimeoutsRef.current.push(t2)
-    }, 8000)
+    }, 8500)
     activeTimeoutsRef.current.push(t1)
   }
 
