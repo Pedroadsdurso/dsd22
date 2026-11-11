@@ -50,7 +50,7 @@ function ObrigadoContent() {
         <div className="container mx-auto flex items-center justify-center px-4">
           <Image
             src="/serasa-logo.png"
-            alt="Serasa"
+            alt=""
             width={150}
             height={50}
             className="h-10 w-auto brightness-0 invert"

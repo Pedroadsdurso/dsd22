@@ -6,8 +6,8 @@ import Script from 'next/script'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Serasa - Limpa Nome',
-  description: 'Consulte e regularize seu CPF',
+  title: 'Consulta de condições · Feirão 2026',
+  description: 'Consulta de condições e ofertas exclusivas no Feirão 2026',
   generator: 'v0.app',
 }
 

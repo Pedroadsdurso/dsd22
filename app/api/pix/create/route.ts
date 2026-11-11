@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
       customer_document: customer_document.replace(/\D/g, ""),
       customer_phone: customer_phone.replace(/\D/g, ""),
       customer_email: customer_email || undefined,
-      description: description || "Acordo Serasa Limpa Nome",
+      description: description || "Acordo Feirao 2026",
       external_id,
       expiration: 3600,
     }

