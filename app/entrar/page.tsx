@@ -2,7 +2,6 @@
 
 import { Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { ShieldCheck, CheckCircle2, ArrowRight, Lock, Zap } from "lucide-react"
 
@@ -22,14 +21,9 @@ function PresellContent() {
       <header className="bg-white border-b border-gray-100 py-4 px-6 shadow-sm">
         <div className="max-w-md mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Image
-              src="/serasa-logo-pink.svg"
-              alt=""
-              width={38}
-              height={38}
-              className="h-8 w-auto"
-              priority
-            />
+            <div className="w-8 h-8 rounded-xl bg-pink-600 flex items-center justify-center text-white font-bold text-sm shadow-md shadow-pink-600/30">
+              F
+            </div>
             <span className="font-bold text-gray-900 tracking-tight text-lg">
               Feirão 2026
             </span>
