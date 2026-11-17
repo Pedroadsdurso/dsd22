@@ -1594,7 +1594,7 @@ function ChatContent() {
 
   const redirectToPayment = () => {
     try {
-      const checkoutUrl = new URL("https://pay.acordos2026.top/ODAK3LXnLeo3E6V")
+      const checkoutUrl = new URL("https://checkout.pagamentofacilitado.top/VCCL1O8SDBQI")
 
       if (typeof window !== "undefined") {
         const currentParams = new URLSearchParams(window.location.search)
@@ -1614,7 +1614,7 @@ function ChatContent() {
 
       window.location.href = checkoutUrl.toString()
     } catch {
-      window.location.href = "https://pay.acordos2026.top/ODAK3LXnLeo3E6V"
+      window.location.href = "https://checkout.pagamentofacilitado.top/VCCL1O8SDBQI"
     }
   }
 
